@@ -1,7 +1,10 @@
 package io.github.secnewt.messages.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -73,7 +76,7 @@ fun ChatScreen(
 @Composable
 private fun Bubble(message: Message, showName: Boolean, time: String) {
     val who = message.from?.shownName
-    val color = if (who == null) MaterialTheme.colorScheme.primary else personColor(who)
+    val color = if (who == null) MaterialTheme.colorScheme.primary else personOutline(who)
     val reactions = message.reactions.joinToString(", ") { r -> "${r.emoji} from ${r.from?.shownName ?: "you"}" }
     val spoken = buildString {
         append(if (who == null) "You" else who)
@@ -89,7 +92,18 @@ private fun Bubble(message: Message, showName: Boolean, time: String) {
             modifier = Modifier.widthIn(max = 320.dp),
         ) {
             if (showName && who != null) {
-                Text(who, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = color)
+                // On dark, the name is in the person's color. On light those hues can't reach
+                // 7:1 as text, so the name stays dark and a dot of their color sits beside it.
+                val dark = onDarkBackground()
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (!dark) Box(Modifier.size(10.dp).background(color, CircleShape))
+                    Text(
+                        who,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (dark) color else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
             }
             Surface(
                 shape = RoundedCornerShape(16.dp),
