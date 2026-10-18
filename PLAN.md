@@ -86,9 +86,11 @@ receiving moves up into Phase 1, and switching waits for it.
 
 - [x] Create the GitHub repo
 - [ ] Phase 1
-  - [ ] Foundations: tab sorting, 2FA code spotting, reaction parsing and matching, the chat
+  - [x] Foundations: tab sorting, 2FA code spotting, reaction parsing and matching, the chat
     list and chat screens (sample data only; not usable as the messaging app yet)
-  - [ ] Default messaging app: send and receive SMS, notifications with reply, block list
+  - [ ] Default messaging app: send and receive SMS, notifications with reply and Copy code,
+    reactions folded and notified quietly (block list: Android drops blocked senders' texts
+    before they reach any app; to confirm on the phone)
   - [ ] MMS receive and send (needed before switching: group texts are MMS)
 - [ ] Phase 2
 - [ ] Phase 3

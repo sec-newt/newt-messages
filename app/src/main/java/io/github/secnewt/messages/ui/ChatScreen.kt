@@ -55,10 +55,23 @@ fun ChatScreen(
     onSend: () -> Unit,
     onBack: () -> Unit,
     time: (Long) -> String,
+    /** Shown in place of the message box when this chat can't be sent to yet. */
+    cantSend: String? = null,
 ) {
     Scaffold(
         topBar = { Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { ScreenHeader(chat.title, onBack) } },
-        bottomBar = { ComposeBar(draft, onDraftChange, onSend) },
+        bottomBar = {
+            if (cantSend != null) {
+                Text(
+                    cantSend,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                )
+            } else {
+                ComposeBar(draft, onDraftChange, onSend)
+            }
+        },
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
