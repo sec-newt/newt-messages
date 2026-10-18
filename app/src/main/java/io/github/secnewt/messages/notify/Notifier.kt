@@ -67,7 +67,7 @@ class Notifier(private val context: Context) {
         // Replying from the notification only for one-to-one chats until group texts (MMS) work.
         if (people.size == 1) builder.addAction(reply(threadId, people.first().address))
         Codes.find(unread.last().body)?.let { builder.addAction(copy(it)) }
-        manager.notify(threadId.toInt(), builder.build())
+        post(threadId.toInt(), builder.build())
     }
 
     /** "Becca ❤️ your message “Let's do lunch…”", quietly. */
@@ -85,7 +85,7 @@ class Notifier(private val context: Context) {
             .setAutoCancel(true)
             .setSilent(true)
             .build()
-        manager.notify(REACTION_ID_OFFSET + threadId.toInt(), notification)
+        post(REACTION_ID_OFFSET + threadId.toInt(), notification)
     }
 
     fun mmsNotSupported() {
@@ -96,10 +96,19 @@ class Notifier(private val context: Context) {
             .setContentText("Newt Messages can't download these yet. Switch back to your old messaging app to get it.")
             .setStyle(NotificationCompat.BigTextStyle().bigText("Newt Messages can't download these yet. Switch back to your old messaging app to get it."))
             .build()
-        manager.notify(MMS_ID, notification)
+        post(MMS_ID, notification)
     }
 
     fun cancel(threadId: Long) = manager.cancel(threadId.toInt())
+
+    private fun post(id: Int, notification: android.app.Notification) {
+        if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        try {
+            manager.notify(id, notification)
+        } catch (e: SecurityException) {
+            // Notifications were turned off between the check and now.
+        }
+    }
 
     private fun Person.toNotificationPerson() = NotificationPerson.Builder().setName(shownName).setKey(address).build()
 
