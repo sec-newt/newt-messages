@@ -42,12 +42,16 @@ echo "Reaction recognized, matched, and notified as a reaction."
 # The phone app's "reply with a message" path. The shell may not hold the permission that
 # guards it; if so, say so instead of failing, since the code path is the same SmsSender.
 adb logcat -c
-if adb shell am startservice -n "$pkg/io.github.secnewt.messages.sms.RespondService" \
-    -a android.intent.action.RESPOND_VIA_MESSAGE -d smsto:15555215554 --es android.intent.extra.TEXT 'Ping' 2>&1 | grep -qi "error\|exception\|denial"; then
+started="$(adb shell am startservice -n "$pkg/io.github.secnewt.messages.sms.RespondService" \
+    -a android.intent.action.RESPOND_VIA_MESSAGE -d smsto:15555215554 --es android.intent.extra.TEXT 'Ping' 2>&1 || true)"
+echo "am startservice said: $started"
+if echo "$started" | grep -qi "error\|exception\|denial\|not allowed"; then
   echo "::warning::The shell can't start the reply service (it lacks SEND_RESPOND_VIA_MESSAGE); sending wasn't tested here."
 else
   sleep 8
   adb logcat -d -s NewtSms:I > send.log
+  cat send.log
+  adb logcat -d | grep -i "RespondService\|NewtSms\|ActivityManager.*messages" | tail -20 || true
   grep -q "Text sent" send.log || fail "A text was handed to the app but never reported sent."
   grep -q "Stored an incoming text" send.log || fail "The emulator's own number didn't get the text back."
   echo "Sending works: the text went out and came back."
