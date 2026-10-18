@@ -17,7 +17,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import io.github.secnewt.messages.R
 
-/** The starter screen. Replace it with the app's first real screen. */
+/** Shown until the app can be the phone's messaging app (after SMS and MMS both work). */
 @Composable
 fun WelcomeScreen() {
     Scaffold { padding ->
@@ -36,7 +36,7 @@ fun WelcomeScreen() {
                 modifier = Modifier.semantics { heading() },
             )
             Text(
-                text = "A new Newt app. It has the Newt look, no permissions and no internet access.",
+                text = "In development. It can't be your messaging app yet: keep using your current one until SMS and picture messages both work here.",
                 style = MaterialTheme.typography.bodyLarge,
             )
         }

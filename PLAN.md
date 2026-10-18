@@ -71,6 +71,10 @@ notification code lists unread messages as they are.
 
 ## Roadmap
 
+Newt Messages can't be the phone's messaging app until it receives both SMS **and** MMS: only
+the default app can read or store messages, and switching early would lose group texts. So MMS
+receiving moves up into Phase 1, and switching waits for it.
+
 1. **Phase 1: SMS that works every day.** Default messaging app role, the three tabs, chats,
    sending and receiving SMS, notifications with reply, the shared block list.
 2. **Phase 2: MMS.** Pictures and group chats. Build on a maintained library instead of
@@ -82,6 +86,10 @@ notification code lists unread messages as they are.
 
 - [x] Create the GitHub repo
 - [ ] Phase 1
+  - [ ] Foundations: tab sorting, 2FA code spotting, reaction parsing and matching, the chat
+    list and chat screens (sample data only; not usable as the messaging app yet)
+  - [ ] Default messaging app: send and receive SMS, notifications with reply, block list
+  - [ ] MMS receive and send (needed before switching: group texts are MMS)
 - [ ] Phase 2
 - [ ] Phase 3
 
