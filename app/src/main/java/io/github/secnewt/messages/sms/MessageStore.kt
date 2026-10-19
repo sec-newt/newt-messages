@@ -174,6 +174,10 @@ class MessageStore(private val context: Context) {
         resolver.update(uri, values, null, null)
     }
 
+    /** Deletes a whole chat, texts and picture messages alike. */
+    fun deleteChat(threadId: Long): Int =
+        resolver.delete(Uri.withAppendedPath(Telephony.Threads.CONTENT_URI, threadId.toString()), null, null)
+
     fun markRead(threadId: Long) {
         val values = ContentValues().apply {
             put(Telephony.Sms.READ, 1)

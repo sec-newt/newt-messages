@@ -85,6 +85,33 @@ class ChatScreensTest {
     }
 
     @Test
+    fun deletingAChatAsksFirst() {
+        var deleted = false
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatScreen(
+                    SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
+                    time = SampleChats.time, onDelete = { deleted = true },
+                )
+            }
+        }
+        composeRule.onNodeWithContentDescription("Delete this chat").performClick()
+        composeRule.onNodeWithText("Delete this chat?").assertIsDisplayed()
+        assertEquals(false, deleted)
+        composeRule.onNodeWithText("Delete").performClick()
+        assertEquals(true, deleted)
+    }
+
+    @Test
+    fun linksShowUnderlined() = composeRule.newtScreenshot("chat-links-dark", dark = true) {
+        ChatScreen(
+            SampleChats.chats[1],
+            listOf(io.github.secnewt.messages.chats.Message(1, "Service times are on firstbaptist.church/visit or email office@church.org", 9 * SampleChats.HOUR, SampleChats.mom)),
+            draft = "", onDraftChange = {}, onSend = {}, onBack = {}, time = SampleChats.time, onDelete = {},
+        )
+    }
+
+    @Test
     fun reactionsAreReadOutWithTheMessage() {
         composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { family() } }
         composeRule.onNodeWithContentDescription("Reactions: ❤️ from Mom, ❤️ from Becca, 😂 from Sam", substring = true).assertIsDisplayed()

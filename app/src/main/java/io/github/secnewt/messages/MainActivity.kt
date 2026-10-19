@@ -133,7 +133,10 @@ class MainActivity : ComponentActivity() {
         val chat = chats.firstOrNull { it.threadId == thread }
             ?: thread?.takeIf { startPeople.isNotEmpty() }?.let { Chat(it, startPeople.map(store::person), "", System.currentTimeMillis()) }
         if (thread == null || chat == null) {
-            ChatListScreen(chats, tab, onTab = { tab = it }, onOpen = { openThread = it.threadId }, time = ::time)
+            ChatListScreen(
+                chats, tab, onTab = { tab = it }, onOpen = { openThread = it.threadId }, time = ::time,
+                onDelete = { chat -> Thread { delete(chat.threadId) }.start() },
+            )
             return
         }
         var draft by rememberSaveable(thread) { mutableStateOf(startDraft) }
@@ -169,6 +172,10 @@ class MainActivity : ComponentActivity() {
             onAttach = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
             attached = picture?.let { "1 picture" },
             onRemoveAttachment = { picture = null },
+            onDelete = {
+                openThread = null
+                Thread { delete(thread) }.start()
+            },
         )
     }
 
@@ -191,6 +198,12 @@ class MainActivity : ComponentActivity() {
             listOf(bytes to "image/jpeg")
         }.orEmpty()
         Mms.send(this, to, text, images)
+    }
+
+    private fun delete(threadId: Long) {
+        val removed = MessageStore(this).deleteChat(threadId)
+        Notifier(this).cancel(threadId)
+        android.util.Log.i("NewtSms", "Deleted a chat ($removed messages)")
     }
 
     private fun retry(message: Message) {

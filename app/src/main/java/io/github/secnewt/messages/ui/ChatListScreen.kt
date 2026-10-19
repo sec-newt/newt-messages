@@ -1,7 +1,12 @@
 package io.github.secnewt.messages.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -77,7 +82,12 @@ fun ChatListScreen(
     onOpen: (Chat) -> Unit,
     time: (Long) -> String,
     onOpenSettings: () -> Unit = {},
+    onDelete: ((Chat) -> Unit)? = null,
 ) {
+    var deleting by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Chat?>(null) }
+    deleting?.let { chat ->
+        DeleteChatDialog(chat.title, onDelete = { deleting = null; onDelete?.invoke(chat) }, onCancel = { deleting = null })
+    }
     Scaffold(bottomBar = { ChatTabBar(chats, tab, onTab) }) { padding ->
         val shown = ChatSorting.inTab(chats, tab)
         LazyColumn(
@@ -96,7 +106,7 @@ fun ChatListScreen(
                 }
             }
             items(shown, key = { it.threadId }) { chat ->
-                ChatRow(chat, time(chat.lastTimeMillis)) { onOpen(chat) }
+                ChatRow(chat, time(chat.lastTimeMillis), onLongPress = if (onDelete != null) ({ deleting = chat }) else null) { onOpen(chat) }
                 HorizontalDivider()
             }
         }
@@ -110,7 +120,7 @@ private fun emptyText(tab: ChatTab) = when (tab) {
 }
 
 @Composable
-private fun ChatRow(chat: Chat, time: String, onClick: () -> Unit) {
+private fun ChatRow(chat: Chat, time: String, onLongPress: (() -> Unit)?, onClick: () -> Unit) {
     val unread = chat.unread > 0
     val spoken = buildString {
         append(chat.title)
@@ -124,8 +134,18 @@ private fun ChatRow(chat: Chat, time: String, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 72.dp)
-            .clickable(role = Role.Button, onClick = onClick)
-            .clearAndSetSemantics { contentDescription = spoken }
+            .combinedClickable(
+                role = Role.Button,
+                onClick = onClick,
+                onLongClick = onLongPress,
+                onLongClickLabel = if (onLongPress != null) "Delete chat" else null,
+            )
+            .clearAndSetSemantics {
+                contentDescription = spoken
+                onClick(label = "Open chat") { onClick(); true }
+                // Screen readers get Delete as an action, since a long press is hard to find.
+                if (onLongPress != null) customActions = listOf(CustomAccessibilityAction("Delete chat") { onLongPress(); true })
+            }
             .padding(vertical = 10.dp),
     ) {
         Initial(chat.title)
