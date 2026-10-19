@@ -37,6 +37,11 @@ class ChatScreensTest {
     @Test fun peopleDark() = composeRule.newtScreenshot("chats-people-dark", dark = true, content = list(ChatTab.PEOPLE))
     @Test fun peopleLight() = composeRule.newtScreenshot("chats-people-light", dark = false, content = list(ChatTab.PEOPLE))
     @Test fun peopleLargeText() = composeRule.newtScreenshot("chats-people-200pct", dark = true, fontScale = 2f, content = list(ChatTab.PEOPLE))
+    @Test
+    fun peopleWithNewMessageButton() = composeRule.newtScreenshot("chats-people-new-dark", dark = true) {
+        ChatListScreen(SampleChats.chats, ChatTab.PEOPLE, onTab = {}, onOpen = {}, time = SampleChats.time, onNewChat = {})
+    }
+
     @Test fun groupsDark() = composeRule.newtScreenshot("chats-groups-dark", dark = true, content = list(ChatTab.GROUPS))
     @Test fun codesLight() = composeRule.newtScreenshot("chats-codes-light", dark = false, content = list(ChatTab.CODES))
 

@@ -70,7 +70,7 @@ tap() { # tap the element whose content-desc or text is $1
   adb pull /sdcard/ui.xml ui.xml > /dev/null
   local b
   b="$(grep -o "\(content-desc\|text\)=\"$1\"[^>]*bounds=\"\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]\"" ui.xml | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]' | head -1 || true)"
-  [ -n "$b" ] || { grep -o 'text="[^"]*"\|content-desc="[^"]*"' ui.xml | head -30; fail "Couldn't find \"$1\" on screen."; }
+  [ -n "$b" ] || { grep -o 'text="[^"]\+"\|content-desc="[^"]\+"' ui.xml; fail "Couldn't find \"$1\" on screen."; }
   read -r x1 y1 x2 y2 <<< "$(echo "$b" | tr -c '0-9' ' ')"
   adb shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))
   sleep 2
