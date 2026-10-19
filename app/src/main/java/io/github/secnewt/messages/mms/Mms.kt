@@ -103,15 +103,18 @@ object Mms {
         }
     }
 
-    /** Sends a text and/or pictures to one person or a group. */
-    fun send(context: Context, to: List<String>, text: String, images: List<Pair<ByteArray, String>> = emptyList(), subscription: Int = -1) {
+    /** A file to send: its bytes, type ("image/jpeg", "application/pdf"…) and name. */
+    class Part(val bytes: ByteArray, val type: String, val name: String)
+
+    /** Sends words and/or files (pictures, video, documents, contact cards) to one person or a group. */
+    fun send(context: Context, to: List<String>, text: String, files: List<Part> = emptyList(), subscription: Int = -1) {
         val request = SendReq().apply {
             setTo(to.map { EncodedStringValue(it) }.toTypedArray())
             setDate(System.currentTimeMillis() / 1000)
             setBody(
                 PduBody().apply {
                     if (text.isNotBlank()) addPart(textPart(text))
-                    images.forEachIndexed { i, (bytes, type) -> addPart(imagePart(bytes, type, i)) }
+                    files.forEachIndexed { i, file -> addPart(filePart(file, i)) }
                 },
             )
         }
@@ -168,13 +171,15 @@ object Mms {
         setData(text.toByteArray(Charsets.UTF_8))
     }
 
-    private fun imagePart(bytes: ByteArray, type: String, index: Int) = PduPart().apply {
-        val name = "image$index." + (if (type == "image/png") "png" else "jpg")
-        setContentType(type.toByteArray())
+    private fun filePart(file: Part, index: Int) = PduPart().apply {
+        // Plain ASCII names only in the headers; the cleaning matches what's saved on the other side.
+        val name = io.github.secnewt.messages.chats.Saving.cleanName(file.name).ifEmpty { "file$index" }
+        setContentType(file.type.toByteArray())
         setContentLocation(name.toByteArray())
-        setContentId("<image$index>".toByteArray())
+        setContentId("<part$index>".toByteArray())
         setName(name.toByteArray())
-        setData(bytes)
+        setFilename(name.toByteArray())
+        setData(file.bytes)
     }
 
     private fun alreadyHave(context: Context, location: String): Boolean =

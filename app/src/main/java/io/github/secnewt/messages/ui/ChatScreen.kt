@@ -71,8 +71,8 @@ fun ChatScreen(
     cantSend: String? = null,
     /** Fetch a picture or group message that didn't download. */
     onDownload: (Message) -> Unit = {},
-    /** Pick a picture to send; [attached] says what's attached, if anything. */
-    onAttach: (() -> Unit)? = null,
+    /** Attach something to send; [attached] says what's attached, if anything. */
+    onAttach: ((AttachKind) -> Unit)? = null,
     attached: String? = null,
     onRemoveAttachment: () -> Unit = {},
     /** Keep a copy of a picture or file: (address, name, type). */
@@ -314,7 +314,7 @@ private fun AttachmentLine(label: String, onRemove: () -> Unit) {
 }
 
 @Composable
-private fun ComposeBar(draft: String, onDraftChange: (String) -> Unit, onSend: () -> Unit, onAttach: (() -> Unit)?, canSend: Boolean) {
+private fun ComposeBar(draft: String, onDraftChange: (String) -> Unit, onSend: () -> Unit, onAttach: ((AttachKind) -> Unit)?, canSend: Boolean) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -324,8 +324,23 @@ private fun ComposeBar(draft: String, onDraftChange: (String) -> Unit, onSend: (
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         if (onAttach != null) {
-            androidx.compose.material3.IconButton(onClick = onAttach, modifier = Modifier.size(56.dp)) {
-                Icon(Icons.Filled.Add, contentDescription = "Attach a picture")
+            var choosing by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+            Box {
+                androidx.compose.material3.IconButton(onClick = { choosing = true }, modifier = Modifier.size(56.dp)) {
+                    Icon(Icons.Filled.Add, contentDescription = "Attach")
+                }
+                androidx.compose.material3.DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
+                    AttachKind.entries.forEach { kind ->
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text(kind.label, style = MaterialTheme.typography.titleMedium) },
+                            onClick = {
+                                choosing = false
+                                onAttach(kind)
+                            },
+                            modifier = Modifier.heightIn(min = 56.dp),
+                        )
+                    }
+                }
             }
         }
         OutlinedTextField(
@@ -422,4 +437,12 @@ private fun WhoReactedDialog(message: Message, onClose: () -> Unit) {
             }
         },
     )
+}
+
+/** What can be attached to a message. */
+enum class AttachKind(val label: String) {
+    MEDIA("Photo or video"),
+    CAMERA("Take a photo"),
+    FILE("File"),
+    CONTACT("Contact card"),
 }
