@@ -48,8 +48,12 @@ echo "am startservice said: $started"
 if echo "$started" | grep -qi "error\|exception\|denial\|not allowed"; then
   echo "::warning::The shell can't start the reply service (it lacks SEND_RESPOND_VIA_MESSAGE); sending wasn't tested here."
 else
-  sleep 8
-  adb logcat -d -s NewtSms:I > send.log
+  # Sending and the text coming back can take a while on a cold emulator: wait up to 30 s.
+  for _ in $(seq 15); do
+    adb logcat -d -s NewtSms:I > send.log
+    grep -q "Text sent" send.log && grep -q "Stored an incoming text" send.log && break
+    sleep 2
+  done
   cat send.log
   adb logcat -d | grep -i "RespondService\|NewtSms\|ActivityManager.*messages" | tail -20 || true
   grep -q "Text sent" send.log || fail "A text was handed to the app but never reported sent."
