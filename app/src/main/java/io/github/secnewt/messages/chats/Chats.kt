@@ -1,7 +1,14 @@
 package io.github.secnewt.messages.chats
 
 /** Someone in a chat: their number (or a short code or sender name) and, if saved, their name. */
-data class Person(val address: String, val name: String? = null) {
+data class Person(
+    val address: String,
+    val name: String? = null,
+    /** Their contact photo (a small one), if they're a contact with a photo. */
+    val photo: String? = null,
+    /** Their contact, for View contact / Edit contact. */
+    val contact: String? = null,
+) {
     val shownName: String get() = name ?: address
 }
 

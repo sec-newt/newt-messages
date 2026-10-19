@@ -354,6 +354,41 @@ class ChatScreensTest {
     }
 
     @Test
+    fun tappingAReactionShowsWhoReacted() {
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatScreen(SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {}, time = SampleChats.time)
+            }
+        }
+        // Tapping the chip and the screen reader's action open the same list.
+        composeRule.onNodeWithContentDescription("You: I can do the brisket", substring = true)
+            .fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.CustomActions]
+            .first { it.label == "See who reacted" }.action()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Reactions").assertIsDisplayed()
+        composeRule.onNodeWithText("Mom, Becca").assertIsDisplayed()
+    }
+
+    @Test
+    fun savedContactsCanBeViewedAndEdited() {
+        var opened: Pair<String, Boolean>? = null
+        val withContact = SampleChats.family.copy(
+            people = SampleChats.family.people.map { if (it.name == "Becca") it.copy(contact = "content://contacts/1") else it },
+        )
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatDetailsScreen(
+                    withContact, onBack = {}, onText = {}, onCall = {}, onAddToContacts = {}, onRename = {},
+                    onNewMembers = {}, onPickContact = {}, onDelete = {}, onOpenContact = { p, e -> opened = p.name.orEmpty() to e },
+                )
+            }
+        }
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Edit contact"))
+        composeRule.onNodeWithContentDescription("Edit Becca's contact").performClick()
+        assertEquals("Becca" to true, opened)
+    }
+
+    @Test
     fun reactionsAreReadOutWithTheMessage() {
         composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { family() } }
         composeRule.onNodeWithContentDescription("Reactions: ❤️ from Mom, ❤️ from Becca, 😂 from Sam", substring = true).assertIsDisplayed()
