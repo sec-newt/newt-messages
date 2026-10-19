@@ -97,7 +97,7 @@ object Mms {
             context.contentResolver.update(uri, values, null, null)
             Log.i(TAG, "Stored an incoming MMS")
             message.getTransactionId()?.let { acknowledge(context, it, subscription) }
-            threadOf(context, uri)?.let { Notifier(context).update(it) }
+            threadOf(context, uri)?.let { Notifier(context).update(it, announce = true) }
         } finally {
             file.delete()
         }

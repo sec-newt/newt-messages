@@ -56,6 +56,7 @@ class MainActivity : ComponentActivity() {
     private var isDefault by mutableStateOf(false)
     private var showDetails by mutableStateOf(false)
     private var newChat by mutableStateOf(false)
+    private var showSettings by mutableStateOf(false)
     // Where a number chosen from contacts goes (the Add someone dialog).
     private var picked: ((String) -> Unit)? = null
     private val pickNumber = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -149,6 +150,21 @@ class MainActivity : ComponentActivity() {
             ?: thread?.takeIf { startPeople.isNotEmpty() }?.let {
                 Chat(it, startPeople.map(store::person), "", System.currentTimeMillis(), name = GroupNames(this).name(it))
             }
+        if (showSettings) {
+            BackHandler { showSettings = false }
+            val store = io.github.secnewt.messages.settings.SettingsStore(this)
+            var current by androidx.compose.runtime.remember { mutableStateOf(store.settings()) }
+            io.github.secnewt.messages.ui.SettingsScreen(
+                current,
+                onChange = {
+                    current = it
+                    store.save(it)
+                },
+                onBack = { showSettings = false },
+                onOpenVoiceSettings = { runCatching { startActivity(Intent("com.android.settings.TTS_SETTINGS")) } },
+            )
+            return
+        }
         if (newChat) {
             BackHandler { newChat = false }
             val contacts by produceState(emptyList<io.github.secnewt.messages.chats.ContactNumber>()) {
@@ -165,6 +181,7 @@ class MainActivity : ComponentActivity() {
                 chats, tab, onTab = { tab = it }, onOpen = { openThread = it.threadId }, time = ::time,
                 onDelete = { chat -> Thread { delete(chat.threadId) }.start() },
                 onNewChat = { newChat = true },
+                onOpenSettings = { showSettings = true },
             )
             return
         }
@@ -207,6 +224,14 @@ class MainActivity : ComponentActivity() {
                     showDetails = false
                     openThread = null
                     Thread { delete(thread) }.start()
+                },
+                onPin = { on ->
+                    io.github.secnewt.messages.settings.SettingsStore(this).setPinned(thread, on)
+                    version++
+                },
+                onMute = { on ->
+                    io.github.secnewt.messages.settings.SettingsStore(this).setMuted(thread, on)
+                    version++
                 },
             )
             return

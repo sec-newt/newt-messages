@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -57,6 +58,8 @@ fun ChatDetailsScreen(
     onNewMembers: (List<String>) -> Unit,
     onPickContact: ((String) -> Unit) -> Unit,
     onDelete: () -> Unit,
+    onPin: (Boolean) -> Unit = {},
+    onMute: (Boolean) -> Unit = {},
 ) {
     var renaming by rememberSaveable { mutableStateOf(false) }
     var adding by rememberSaveable { mutableStateOf(false) }
@@ -136,6 +139,8 @@ fun ChatDetailsScreen(
                 )
                 HorizontalDivider()
             }
+            item { Toggle("Pin to top", "Keep this chat at the top of its tab.", chat.pinned, onPin) }
+            item { Toggle("Mute this chat", "No notifications from it. Messages still arrive and count as unread.", chat.muted, onMute) }
             item {
                 Button(onClick = { adding = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                     Text(if (chat.isGroup) "Add someone" else "Add someone (starts a group)", style = MaterialTheme.typography.titleMedium)
@@ -202,6 +207,23 @@ private fun MemberRow(
                 Text("Remove ${person.shownName} from the group", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.error)
             }
         }
+    }
+}
+
+@Composable
+private fun Toggle(title: String, explanation: String, on: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp)
+            .toggleable(value = on, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onChange),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(explanation, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        androidx.compose.material3.Switch(checked = on, onCheckedChange = null)
     }
 }
 

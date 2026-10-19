@@ -99,7 +99,7 @@ receiving moves up into Phase 1, and switching waits for it.
     phone with QUIK still installed, starting with a throwaway group.
 - [x] From first use (Oct 19): tappable links, full-size pictures, deleting chats, saving
   pictures and files, renaming groups
-- [ ] Full-fledged (Oct 19 list): chat details (members, text/call, add to contacts, add/remove
+- [ ] Full-fledged (Oct 19 list; done so far: details, new chat, message actions, settings): chat details (members, text/call, add to contacts, add/remove
   people, rename, delete); new chat button; message actions (react, copy, delete one); settings
   (reaction notifications, speak sender, pin, mute); search, Newt Home unread count, spam.
 - [ ] Phase 2

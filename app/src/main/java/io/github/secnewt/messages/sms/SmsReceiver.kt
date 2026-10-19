@@ -40,7 +40,7 @@ class SmsReceiver : BroadcastReceiver() {
                     Notifier(context).reaction(threadId, store.person(address), reaction, target)
                 } else {
                     Log.i(TAG, "Stored an incoming text")
-                    Notifier(context).update(threadId)
+                    Notifier(context).update(threadId, announce = true)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Couldn't handle an incoming text", e)

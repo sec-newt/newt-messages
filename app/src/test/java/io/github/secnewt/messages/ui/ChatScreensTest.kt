@@ -244,6 +244,45 @@ class ChatScreensTest {
         assertEquals(4L, deleted)
     }
 
+    @Test fun settingsDark() = composeRule.newtScreenshot("settings-dark", dark = true) {
+        SettingsScreen(io.github.secnewt.messages.settings.MessagesSettings(), onChange = {}, onBack = {})
+    }
+    @Test fun settingsLargeText() = composeRule.newtScreenshot("settings-200pct", dark = false, fontScale = 2f) {
+        SettingsScreen(io.github.secnewt.messages.settings.MessagesSettings(), onChange = {}, onBack = {})
+    }
+
+    @Test
+    fun choosingNotToNotifyForReactions() {
+        var changed: io.github.secnewt.messages.settings.MessagesSettings? = null
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                SettingsScreen(io.github.secnewt.messages.settings.MessagesSettings(), onChange = { changed = it }, onBack = {})
+            }
+        }
+        composeRule.onNodeWithText("Don't notify").performClick()
+        assertEquals(io.github.secnewt.messages.settings.ReactionNotify.OFF, changed?.reactions)
+    }
+
+    @Test
+    fun pinningAndMutingAChat() {
+        var pinned: Boolean? = null
+        var muted: Boolean? = null
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatDetailsScreen(
+                    SampleChats.family, onBack = {}, onText = {}, onCall = {}, onAddToContacts = {}, onRename = {},
+                    onNewMembers = {}, onPickContact = {}, onDelete = {}, onPin = { pinned = it }, onMute = { muted = it },
+                )
+            }
+        }
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Pin to top"))
+        composeRule.onNodeWithText("Pin to top").performClick()
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Mute this chat"))
+        composeRule.onNodeWithText("Mute this chat").performClick()
+        assertEquals(true, pinned)
+        assertEquals(true, muted)
+    }
+
     @Test
     fun reactionsAreReadOutWithTheMessage() {
         composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { family() } }
