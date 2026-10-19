@@ -22,6 +22,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.foundation.clickable
+import io.github.secnewt.messages.chats.Links
+import androidx.compose.runtime.setValue
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -66,9 +70,25 @@ fun ChatScreen(
     onAttach: (() -> Unit)? = null,
     attached: String? = null,
     onRemoveAttachment: () -> Unit = {},
+    onDelete: (() -> Unit)? = null,
 ) {
+    var viewing by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var confirmDelete by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    viewing?.let { PictureViewer(it) { viewing = null } }
+    if (confirmDelete && onDelete != null) {
+        DeleteChatDialog(chat.title, onDelete = { confirmDelete = false; onDelete() }, onCancel = { confirmDelete = false })
+    }
     Scaffold(
-        topBar = { Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { ScreenHeader(chat.title, onBack) } },
+        topBar = {
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) { ScreenHeader(chat.title, onBack) }
+                if (onDelete != null) {
+                    androidx.compose.material3.IconButton(onClick = { confirmDelete = true }, modifier = Modifier.size(56.dp)) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Delete this chat")
+                    }
+                }
+            }
+        },
         bottomBar = {
             if (cantSend != null) {
                 Text(
@@ -92,14 +112,17 @@ fun ChatScreen(
             reverseLayout = true,
         ) {
             items(messages.asReversed(), key = { it.id }) { message ->
-                Bubble(message, showName = chat.isGroup, time = time(message.timeMillis), onDownload = { onDownload(message) })
+                Bubble(
+                    message, showName = chat.isGroup, time = time(message.timeMillis),
+                    onDownload = { onDownload(message) }, onOpenPicture = { viewing = it },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun Bubble(message: Message, showName: Boolean, time: String, onDownload: () -> Unit) {
+private fun Bubble(message: Message, showName: Boolean, time: String, onDownload: () -> Unit, onOpenPicture: (String) -> Unit) {
     val who = message.from?.shownName
     val color = if (who == null) MaterialTheme.colorScheme.primary else personOutline(who)
     val reactions = message.reactions.joinToString(", ") { r -> "${r.emoji} from ${r.from?.shownName ?: "you"}" }
@@ -111,7 +134,11 @@ private fun Bubble(message: Message, showName: Boolean, time: String, onDownload
     }
     Row(
         modifier = Modifier.fillMaxWidth().then(
-            if (message.waiting) Modifier.semantics(mergeDescendants = true) {} else Modifier.clearAndSetSemantics { contentDescription = spoken },
+            if (message.waiting || message.images.isNotEmpty() || Links.find(message.body).isNotEmpty()) {
+                Modifier.semantics(mergeDescendants = false) {}
+            } else {
+                Modifier.clearAndSetSemantics { contentDescription = spoken }
+            },
         ),
         horizontalArrangement = if (message.mine) Arrangement.End else Arrangement.Start,
     ) {
@@ -139,8 +166,8 @@ private fun Bubble(message: Message, showName: Boolean, time: String, onDownload
                 border = BorderStroke(2.dp, color),
             ) {
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    message.images.forEach { MmsImage(it) }
-                    if (message.body.isNotEmpty()) Text(message.body, style = MaterialTheme.typography.bodyLarge)
+                    message.images.forEach { uri -> MmsImage(uri) { onOpenPicture(uri) } }
+                    if (message.body.isNotEmpty()) Text(linked(message.body), style = MaterialTheme.typography.bodyLarge)
                     if (message.waiting) {
                         androidx.compose.material3.OutlinedButton(onClick = onDownload, modifier = Modifier.heightIn(min = 48.dp)) {
                             Text("Download", style = MaterialTheme.typography.titleMedium)
@@ -169,9 +196,32 @@ private fun Bubble(message: Message, showName: Boolean, time: String, onDownload
     }
 }
 
-/** A picture from the message store, shrunk to fit; a plain label until it loads. */
+/** Web and email addresses underlined and tappable; tapping opens them in the browser or mail app. */
 @Composable
-private fun MmsImage(uri: String) {
+private fun linked(text: String): androidx.compose.ui.text.AnnotatedString {
+    val links = Links.find(text)
+    if (links.isEmpty()) return androidx.compose.ui.text.AnnotatedString(text)
+    val style = androidx.compose.ui.text.TextLinkStyles(
+        androidx.compose.ui.text.SpanStyle(
+            color = MaterialTheme.colorScheme.primary,
+            textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
+            fontWeight = FontWeight.SemiBold,
+        ),
+    )
+    return androidx.compose.ui.text.buildAnnotatedString {
+        var at = 0
+        links.forEach { link ->
+            append(text.substring(at, link.start))
+            withLink(androidx.compose.ui.text.LinkAnnotation.Url(link.target, style)) { append(text.substring(link.start, link.end)) }
+            at = link.end
+        }
+        append(text.substring(at))
+    }
+}
+
+/** A picture from the message store, shrunk to fit; a plain label until it loads. Tap for full size. */
+@Composable
+private fun MmsImage(uri: String, onOpen: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val image by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, uri) {
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Pictures.thumbnail(context, uri) }
@@ -179,8 +229,11 @@ private fun MmsImage(uri: String) {
     val loaded = image
     if (loaded != null) {
         androidx.compose.foundation.Image(
-            loaded, contentDescription = null,
-            modifier = Modifier.widthIn(max = 260.dp).heightIn(max = 320.dp),
+            loaded, contentDescription = "Picture",
+            modifier = Modifier
+                .widthIn(max = 260.dp)
+                .heightIn(max = 320.dp)
+                .clickable(onClickLabel = "See it full size", onClick = onOpen),
             contentScale = androidx.compose.ui.layout.ContentScale.Fit,
         )
     } else {
