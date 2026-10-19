@@ -1,5 +1,6 @@
 package io.github.secnewt.messages.ui
 
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -100,7 +101,8 @@ fun ChatScreen(
     }
     Scaffold(
         topBar = {
-            Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            // The screen draws under the status bar, so the top bar steps down below it.
+            Row(Modifier.statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { ScreenHeader(chat.title, onBack) }
                 if (onDetails != null) {
                     androidx.compose.material3.IconButton(onClick = onDetails, modifier = Modifier.size(56.dp)) {
@@ -125,7 +127,16 @@ fun ChatScreen(
             }
         },
     ) { padding ->
+        // The newest message is item 0, at the bottom. When one arrives, the list would stay
+        // pinned to the message that was showing and leave the new one just off screen, so:
+        // follow new messages when already at the newest end, and always after I send one.
+        val list = androidx.compose.foundation.lazy.rememberLazyListState()
+        val newest = messages.lastOrNull()
+        androidx.compose.runtime.LaunchedEffect(newest?.id) {
+            if (newest != null && (newest.mine || list.firstVisibleItemIndex <= 1)) list.animateScrollToItem(0)
+        }
         LazyColumn(
+            state = list,
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),

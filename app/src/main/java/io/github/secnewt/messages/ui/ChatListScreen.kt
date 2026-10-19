@@ -1,5 +1,6 @@
 package io.github.secnewt.messages.ui
 
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.runtime.getValue
@@ -202,7 +203,7 @@ enum class BulkAction(val label: String, val confirm: Boolean) {
 @Composable
 private fun SelectionBar(picked: List<Chat>, onAction: (BulkAction) -> Unit, onCancel: () -> Unit) {
     androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Column(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     if (picked.size == 1) "1 chat picked" else "${picked.size} chats picked",

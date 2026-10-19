@@ -1,5 +1,6 @@
 package io.github.secnewt.messages.ui
 
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -128,7 +129,7 @@ fun ChatDetailsScreen(
         )
     }
 
-    Scaffold(topBar = { Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { ScreenHeader(if (chat.isGroup) "Group details" else "Chat details", onBack) } }) { padding ->
+    Scaffold(topBar = { Column(Modifier.statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp)) { ScreenHeader(if (chat.isGroup) "Group details" else "Chat details", onBack) } }) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),

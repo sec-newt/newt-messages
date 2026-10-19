@@ -1,5 +1,6 @@
 package io.github.secnewt.messages.ui
 
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -54,7 +55,7 @@ fun NewChatScreen(
     }
 
     Scaffold(
-        topBar = { Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { ScreenHeader("New message", onBack) } },
+        topBar = { Column(Modifier.statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp)) { ScreenHeader("New message", onBack) } },
         bottomBar = {
             if (chosen.isNotEmpty()) {
                 Button(

@@ -1,5 +1,6 @@
 package io.github.secnewt.messages.ui
 
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -31,7 +32,7 @@ import io.github.secnewt.ui.SectionHeading
 /** The app's settings: how reactions notify, and saying who a message is from. */
 @Composable
 fun SettingsScreen(settings: MessagesSettings, onChange: (MessagesSettings) -> Unit, onBack: () -> Unit, onOpenVoiceSettings: () -> Unit = {}) {
-    Scaffold(topBar = { Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { ScreenHeader("Settings", onBack) } }) { padding ->
+    Scaffold(topBar = { Column(Modifier.statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp)) { ScreenHeader("Settings", onBack) } }) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),

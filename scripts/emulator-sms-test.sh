@@ -125,6 +125,16 @@ adb shell input text "5550177"
 sleep 1
 tap "Add 5550177"
 tap "Text 5550177"
+# The chat's top bar must sit below Android's status bar, not under it (Jerry's screenshot,
+# 2026-10-19). Its Back button starts lower than the status bar's height.
+adb shell uiautomator dump /sdcard/ui.xml > /dev/null
+adb pull /sdcard/ui.xml ui.xml > /dev/null
+status="$(adb shell dumpsys window | grep -o 'statusBars.*frame=\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]' | head -1 | grep -o '\]\[[0-9]*,[0-9]*\]' | grep -o ',[0-9]*' | tr -d ',' || true)"
+[ -n "$status" ] || status=63
+back_top="$(grep -o 'content-desc="Back"[^>]*bounds="\[[0-9]*,[0-9]*\]' ui.xml | grep -o ',[0-9]*\]$' | tr -d ',]' | head -1 || true)"
+echo "Status bar ends at $status px; the chat's Back button starts at ${back_top:-?} px."
+[ -n "$back_top" ] && [ "$back_top" -ge "$status" ] || fail "The chat's top bar runs under the status bar."
+echo "The chat's top bar sits below the status bar."
 adb shell uiautomator dump /sdcard/ui.xml > /dev/null
 adb pull /sdcard/ui.xml ui.xml > /dev/null
 grep -q 'content-desc="Send"' ui.xml && grep -q 'text="5550177"' ui.xml \

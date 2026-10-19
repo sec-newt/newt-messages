@@ -5,6 +5,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performTouchInput
@@ -403,6 +405,22 @@ class ChatScreensTest {
         listOf("Photo or video", "Take a photo", "File").forEach { composeRule.onNodeWithText(it).assertIsDisplayed() }
         composeRule.onNodeWithText("Contact card").performClick()
         assertEquals(AttachKind.CONTACT, chosen)
+    }
+
+    @Test
+    fun aNewMessageScrollsIntoView() {
+        var messages by androidx.compose.runtime.mutableStateOf(
+            (1L..40L).map { io.github.secnewt.messages.chats.Message(it, "Message $it", it * 60_000, SampleChats.becca) },
+        )
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatScreen(SampleChats.chats[0], messages, draft = "", onDraftChange = {}, onSend = {}, onBack = {}, time = SampleChats.time)
+            }
+        }
+        composeRule.onNodeWithContentDescription("Becca: Message 40", substring = true).assertIsDisplayed()
+        messages = messages + io.github.secnewt.messages.chats.Message(41, "Just arrived", 41 * 60_000, SampleChats.becca)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Becca: Just arrived", substring = true).assertIsDisplayed()
     }
 
     @Test
