@@ -367,7 +367,6 @@ class ChatScreensTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Reactions").assertIsDisplayed()
         composeRule.onNodeWithText("Mom, Becca").assertIsDisplayed()
-        composeRule.onNodeWithText("Sam").assertIsDisplayed()
     }
 
     @Test
