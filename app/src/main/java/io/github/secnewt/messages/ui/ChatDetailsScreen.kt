@@ -27,6 +27,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -182,10 +183,16 @@ private fun MemberRow(
         }
         // Words, not bare icons, so every button says what it does.
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = onText, modifier = Modifier.heightIn(min = 48.dp)) { Text("Text", style = MaterialTheme.typography.titleSmall) }
-            OutlinedButton(onClick = onCall, modifier = Modifier.heightIn(min = 48.dp)) { Text("Call", style = MaterialTheme.typography.titleSmall) }
+            // Screen readers hear whose button it is ("Text Becca"), not just "Text".
+            val who = person.shownName
+            OutlinedButton(onClick = onText, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Text $who" }) {
+                Text("Text", style = MaterialTheme.typography.titleSmall)
+            }
+            OutlinedButton(onClick = onCall, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Call $who" }) {
+                Text("Call", style = MaterialTheme.typography.titleSmall)
+            }
             if (person.name == null) {
-                OutlinedButton(onClick = onAddToContacts, modifier = Modifier.heightIn(min = 48.dp)) {
+                OutlinedButton(onClick = onAddToContacts, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Add $who to contacts" }) {
                     Text("Add to contacts", style = MaterialTheme.typography.titleSmall)
                 }
             }

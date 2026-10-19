@@ -5,7 +5,9 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import io.github.secnewt.messages.chats.Chat
@@ -89,7 +91,8 @@ class ChatScreensTest {
     fun deletingAChatAsksFirst() {
         var deleted = false
         composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { Details(onDelete = { deleted = true }) } }
-        composeRule.onNodeWithText("Delete this chat").performScrollTo().performClick()
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Delete this chat"))
+        composeRule.onNodeWithText("Delete this chat").performClick()
         composeRule.onNodeWithText("Delete this chat?").assertIsDisplayed()
         assertEquals(false, deleted)
         composeRule.onNodeWithText("Delete").performClick()
@@ -114,7 +117,8 @@ class ChatScreensTest {
     fun removingSomeoneStartsANewGroup() {
         var members: List<String>? = null
         composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { Details(onNewMembers = { members = it }) } }
-        composeRule.onNodeWithText("Remove Sam from the group").performScrollTo().performClick()
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Remove Sam from the group"))
+        composeRule.onNodeWithText("Remove Sam from the group").performClick()
         composeRule.onNodeWithText("Start new group").performClick()
         assertEquals(listOf("+19725550111", "+19725550144", "+14695550199"), members)
     }
@@ -123,7 +127,8 @@ class ChatScreensTest {
     fun unknownNumbersCanBeAddedToContacts() {
         var added: String? = null
         composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { Details(onAddToContacts = { added = it.address }) } }
-        composeRule.onNodeWithText("Add to contacts").performScrollTo().performClick()
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Add to contacts"))
+        composeRule.onNodeWithText("Add to contacts").performClick()
         assertEquals("+14695550199", added)
     }
 
