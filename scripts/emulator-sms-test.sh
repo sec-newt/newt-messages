@@ -3,7 +3,7 @@
 #  1. an incoming text is stored and notified,
 #  2. an incoming reaction to it is stored as read and gets a quiet reaction notification,
 #     not a text one,
-#  3. a text sent through "reply with a message" goes out (the emulator texts itself back).
+#  3. typing a text and tapping Send sends it (the emulator texts itself back).
 set -euo pipefail
 
 pkg="io.github.secnewt.messages.debug"
@@ -39,29 +39,28 @@ adb shell dumpsys notification --noredact > notifications.txt
 grep -q "reacted" notifications.txt || fail "No reaction notification."
 echo "Reaction recognized, matched, and notified as a reaction."
 
-# The phone app's "reply with a message" path, which uses the same SmsSender as the app.
-# Android won't start a background app's service from the shell, so open the app first.
-adb shell am start -W -n "$pkg/io.github.secnewt.messages.MainActivity" > /dev/null
-sleep 2
+# Sending, the way a person does it: open a chat from an "sms:" link with the text already
+# typed, then tap Send. The emulator's own number texts it straight back.
 adb logcat -c
-started="$(adb shell am startservice -n "$pkg/io.github.secnewt.messages.sms.RespondService" \
-    -a android.intent.action.RESPOND_VIA_MESSAGE -d smsto:15555215554 --es android.intent.extra.TEXT 'Ping' 2>&1 || true)"
-echo "am startservice said: $started"
-if echo "$started" | grep -qi "error\|exception\|denial\|not allowed"; then
-  fail "Couldn't start the reply service, so sending wasn't tested."
-else
-  # Sending and the text coming back can take a while on a cold emulator: wait up to 30 s.
-  for _ in $(seq 15); do
-    adb logcat -d -s NewtSms:I > send.log
-    grep -q "Text sent" send.log && grep -q "Stored an incoming text" send.log && break
-    sleep 2
-  done
-  cat send.log
-  adb logcat -d | grep -i "RespondService\|NewtSms\|ActivityManager.*messages" | tail -20 || true
-  grep -q "Text sent" send.log || fail "A text was handed to the app but never reported sent."
-  grep -q "Stored an incoming text" send.log || fail "The emulator's own number didn't get the text back."
-  echo "Sending works: the text went out and came back."
-fi
+adb shell am start -W -a android.intent.action.SENDTO -d smsto:15555215554 --es sms_body Ping \
+  -n "$pkg/io.github.secnewt.messages.MainActivity" > /dev/null
+sleep 4
+adb shell uiautomator dump /sdcard/ui.xml > /dev/null
+adb pull /sdcard/ui.xml ui.xml > /dev/null
+bounds="$(grep -o 'content-desc="Send"[^>]*bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' ui.xml | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]' | head -1)"
+[ -n "$bounds" ] || { grep -o 'text="[^"]*"' ui.xml | head -20; fail "The chat didn't open with a Send button."; }
+read -r x1 y1 x2 y2 <<< "$(echo "$bounds" | tr -c '0-9' ' ')"
+adb shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))
+# Sending and the text coming back can take a while on a cold emulator: wait up to 30 s.
+for _ in $(seq 15); do
+  adb logcat -d -s NewtSms:I > send.log
+  grep -q "Text sent" send.log && grep -q "Stored an incoming text" send.log && break
+  sleep 2
+done
+cat send.log
+grep -q "Text sent" send.log || fail "Tapping Send didn't send the text."
+grep -q "Stored an incoming text" send.log || fail "The text was sent but never came back to the emulator's own number."
+echo "Sending works: the text went out and came back."
 
 adb logcat -d > after.log
 if grep -q "FATAL EXCEPTION" after.log; then

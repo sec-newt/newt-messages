@@ -42,6 +42,8 @@ class MainActivity : ComponentActivity() {
     private var version by mutableIntStateOf(0)
     private var openThread by mutableStateOf<Long?>(null)
     private var startDraft by mutableStateOf("")
+    // Who an "sms:" link was for, so a brand-new chat (no messages yet) can still open.
+    private var startPeople by mutableStateOf<List<String>>(emptyList())
     private val changes = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
             version++
@@ -93,7 +95,8 @@ class MainActivity : ComponentActivity() {
         val address = intent.data?.takeIf { it.scheme in setOf("sms", "smsto", "mms", "mmsto") }
             ?.schemeSpecificPart?.substringBefore('?')?.takeIf { it.isNotBlank() } ?: return
         if (!isMessagingApp()) return
-        openThread = Telephony.Threads.getOrCreateThreadId(this, address.split(',', ';').map { it.trim() }.toSet())
+        startPeople = address.split(',', ';').map { it.trim() }.filter { it.isNotEmpty() }
+        openThread = Telephony.Threads.getOrCreateThreadId(this, startPeople.toSet())
         startDraft = intent.getStringExtra("sms_body") ?: intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
     }
 
@@ -104,6 +107,7 @@ class MainActivity : ComponentActivity() {
         val chats by produceState(emptyList<Chat>(), version) { value = withContext(Dispatchers.IO) { store.chats() } }
         val thread = openThread
         val chat = chats.firstOrNull { it.threadId == thread }
+            ?: thread?.takeIf { startPeople.isNotEmpty() }?.let { Chat(it, startPeople.map(store::person), "", System.currentTimeMillis()) }
         if (thread == null || chat == null) {
             ChatListScreen(chats, tab, onTab = { tab = it }, onOpen = { openThread = it.threadId }, time = ::time)
             return
