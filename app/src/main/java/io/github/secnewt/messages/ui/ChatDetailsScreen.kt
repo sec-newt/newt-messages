@@ -60,7 +60,32 @@ fun ChatDetailsScreen(
     onDelete: () -> Unit,
     onPin: (Boolean) -> Unit = {},
     onMute: (Boolean) -> Unit = {},
+    isBlocked: (Person) -> Boolean = { false },
+    onBlock: (Person, Boolean) -> Unit = { _, _ -> },
 ) {
+    var blocking by rememberSaveable { mutableStateOf<String?>(null) }
+    blocking?.let { address ->
+        val person = chat.people.first { it.address == address }
+        AlertDialog(
+            onDismissRequest = { blocking = null },
+            title = { Text("Block ${person.shownName}?") },
+            text = {
+                Text(
+                    "Android turns away texts and calls from this number, in every app, including Newt Phone. " +
+                        "You can unblock it here or in Newt Phone's block list.",
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { blocking = null; onBlock(person, true) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("Block", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { blocking = null }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel", style = MaterialTheme.typography.titleMedium) }
+            },
+        )
+    }
     var renaming by rememberSaveable { mutableStateOf(false) }
     var adding by rememberSaveable { mutableStateOf(false) }
     var removing by rememberSaveable { mutableStateOf<String?>(null) }
@@ -129,8 +154,11 @@ fun ChatDetailsScreen(
                 )
             }
             items(chat.people, key = { it.address }) { person ->
+                val blocked = isBlocked(person)
                 MemberRow(
                     person,
+                    blocked = blocked,
+                    onBlock = { if (blocked) onBlock(person, false) else blocking = person.address },
                     canRemove = chat.people.size > 2,
                     onText = { onText(person) },
                     onCall = { onCall(person) },
@@ -168,6 +196,8 @@ fun ChatDetailsScreen(
 @Composable
 private fun MemberRow(
     person: Person,
+    blocked: Boolean,
+    onBlock: () -> Unit,
     canRemove: Boolean,
     onText: () -> Unit,
     onCall: () -> Unit,
@@ -179,6 +209,9 @@ private fun MemberRow(
             Initial(person.shownName)
             Column(Modifier.weight(1f)) {
                 Text(person.shownName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                if (blocked) {
+                    Text("Blocked", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                }
                 if (person.name != null) {
                     Text(person.address, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
@@ -201,6 +234,13 @@ private fun MemberRow(
                     Text("Add to contacts", style = MaterialTheme.typography.titleSmall)
                 }
             }
+        }
+        TextButton(onClick = onBlock, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text(
+                if (blocked) "Unblock ${person.shownName}" else "Block ${person.shownName}",
+                style = MaterialTheme.typography.titleSmall,
+                color = if (blocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+            )
         }
         if (canRemove) {
             TextButton(onClick = onRemove, modifier = Modifier.heightIn(min = 48.dp)) {
