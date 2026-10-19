@@ -5,6 +5,9 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import io.github.secnewt.messages.chats.Chat
@@ -108,6 +111,35 @@ class ChatScreensTest {
             SampleChats.chats[1],
             listOf(io.github.secnewt.messages.chats.Message(1, "Service times are on firstbaptist.church/visit or email office@church.org", 9 * SampleChats.HOUR, SampleChats.mom)),
             draft = "", onDraftChange = {}, onSend = {}, onBack = {}, time = SampleChats.time, onDelete = {},
+        )
+    }
+
+    @Test
+    fun savingAFileAndRenamingAGroup() {
+        var saved: String? = null
+        var renamed: String? = null
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatScreen(
+                    SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
+                    time = SampleChats.time, onSave = { _, name, _ -> saved = name }, onRename = { renamed = it },
+                )
+            }
+        }
+        composeRule.onNodeWithText("Save").performClick()
+        assertEquals("bulletin.pdf", saved)
+        composeRule.onNodeWithContentDescription("Rename this group").performClick()
+        composeRule.onNodeWithText("Name this group").assertIsDisplayed()
+        composeRule.onNode(hasSetTextAction() and hasText("Family")).performTextReplacement("Maples family")
+        composeRule.onNodeWithText("Save name").performClick()
+        assertEquals("Maples family", renamed)
+    }
+
+    @Test
+    fun groupWithAFileDark() = composeRule.newtScreenshot("chat-group-file-dark", dark = true) {
+        ChatScreen(
+            SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
+            time = SampleChats.time, onSave = { _, _, _ -> }, onRename = {}, onDelete = {},
         )
     }
 

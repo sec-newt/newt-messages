@@ -5,6 +5,9 @@ data class Person(val address: String, val name: String? = null) {
     val shownName: String get() = name ?: address
 }
 
+/** A file in a picture message that isn't a picture: a PDF, a contact card, audio, video. */
+data class Attachment(val uri: String, val name: String, val type: String)
+
 /** An emoji someone put on a message. */
 data class Reaction(val emoji: String, val from: Person?)
 
@@ -17,6 +20,8 @@ data class Message(
     val reactions: List<Reaction> = emptyList(),
     /** Pictures in a picture message, as content addresses. */
     val images: List<String> = emptyList(),
+    /** Other files in a picture message. */
+    val files: List<Attachment> = emptyList(),
     /** A picture or group message that hasn't downloaded yet (tap Download). */
     val waiting: Boolean = false,
 ) {
