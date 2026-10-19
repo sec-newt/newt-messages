@@ -25,7 +25,6 @@ import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.database.DatabaseUtils;
 import android.database.sqlite.SQLiteException;
-import android.drm.DrmManagerClient;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.MediaStore;
@@ -43,8 +42,6 @@ import android.text.TextUtils;
 import io.github.secnewt.messages.mms.ContentType;
 import io.github.secnewt.messages.mms.InvalidHeaderValueException;
 import io.github.secnewt.messages.mms.MmsException;
-import io.github.secnewt.messages.mms.util.DownloadDrmHelper;
-import io.github.secnewt.messages.mms.util.DrmConvertSession;
 import io.github.secnewt.messages.mms.util.PduCache;
 import io.github.secnewt.messages.mms.util.PduCacheEntry;
 import io.github.secnewt.messages.mms.util.SqliteWrapper;
@@ -280,13 +277,11 @@ public class PduPersister {
 
     private final Context mContext;
     private final ContentResolver mContentResolver;
-    private final DrmManagerClient mDrmManagerClient;
     private final TelephonyManager mTelephonyManager;
 
     private PduPersister(Context context) {
         mContext = context;
         mContentResolver = context.getContentResolver();
-        mDrmManagerClient = new DrmManagerClient(context);
         mTelephonyManager = (TelephonyManager)context
                 .getSystemService(Context.TELEPHONY_SERVICE);
      }
@@ -813,7 +808,6 @@ public class PduPersister {
             throws MmsException {
         OutputStream os = null;
         InputStream is = null;
-        DrmConvertSession drmConvertSession = null;
         Uri dataUri = null;
         String path = null;
 
@@ -840,35 +834,7 @@ public class PduPersister {
                     }
                 }
             } else {
-                boolean isDrm = DownloadDrmHelper.isDrmConvertNeeded(contentType);
-                if (isDrm) {
-                    if (uri != null) {
-                        try {
-                            path = convertUriToPath(mContext, uri);
-                            if (LOCAL_LOGV) {
-                                Log.v(TAG, "drm uri: " + uri + " path: " + path);
-                            }
-                            File f = new File(path);
-                            long len = f.length();
-                            if (LOCAL_LOGV) {
-                                Log.v(TAG, "drm path: " + path + " len: " + len);
-                            }
-                            if (len > 0) {
-                                // we're not going to re-persist and re-encrypt an already
-                                // converted drm file
-                                return;
-                            }
-                        } catch (Exception e) {
-                            Log.e(TAG, "Can't get file info for: " + part.getDataUri(), e);
-                        }
-                    }
-                    // We haven't converted the file yet, start the conversion
-                    drmConvertSession = DrmConvertSession.open(mContext, contentType);
-                    if (drmConvertSession == null) {
-                        throw new MmsException("Mimetype " + contentType +
-                                " can not be converted.");
-                    }
-                }
+                // Newt Messages: DRM (forward-locked) parts aren't converted; saved as they are.
                 // uri can look like:
                 // content://mms/part/98
                 os = mContentResolver.openOutputStream(uri);
@@ -893,32 +859,13 @@ public class PduPersister {
 
                     byte[] buffer = new byte[8192];
                     for (int len = 0; (len = is.read(buffer)) != -1; ) {
-                        if (!isDrm) {
-                            os.write(buffer, 0, len);
-                        } else {
-                            byte[] convertedData = drmConvertSession.convert(buffer, len);
-                            if (convertedData != null) {
-                                os.write(convertedData, 0, convertedData.length);
-                            } else {
-                                throw new MmsException("Error converting drm data.");
-                            }
-                        }
+                        os.write(buffer, 0, len);
                     }
                 } else {
                     if (LOCAL_LOGV) {
                         Log.v(TAG, "Saving data to: " + uri);
                     }
-                    if (!isDrm) {
-                        os.write(data);
-                    } else {
-                        dataUri = uri;
-                        byte[] convertedData = drmConvertSession.convert(data, data.length);
-                        if (convertedData != null) {
-                            os.write(convertedData, 0, convertedData.length);
-                        } else {
-                            throw new MmsException("Error converting drm data.");
-                        }
-                    }
+                    os.write(data);
                 }
             }
         } catch (FileNotFoundException e) {
@@ -941,17 +888,6 @@ public class PduPersister {
                 } catch (IOException e) {
                     Log.e(TAG, "IOException while closing: " + is, e);
                 } // Ignore
-            }
-            if (drmConvertSession != null) {
-                drmConvertSession.close(path);
-
-                // Reset the permissions on the encrypted part file so everyone has only read
-                // permission.
-                File f = new File(path);
-                ContentValues values = new ContentValues(0);
-                SqliteWrapper.update(mContext, mContentResolver,
-                                     Uri.parse("content://mms/resetFilePerm/" + f.getName()),
-                                     values, null, null);
             }
         }
     }
