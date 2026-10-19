@@ -54,6 +54,10 @@ class MainActivity : ComponentActivity() {
     private var version by mutableIntStateOf(0)
     private var openThread by mutableStateOf<Long?>(null)
     private var isDefault by mutableStateOf(false)
+    // One store for as long as the app is open, so contacts and lookups aren't redone on every
+    // refresh; and the last chat list, shown straight away while a fresh one loads.
+    private val messageStore by lazy { MessageStore(this) }
+    private var lastChats by mutableStateOf(emptyList<Chat>())
     private var showDetails by mutableStateOf(false)
     private var newChat by mutableStateOf(false)
     private var showSettings by mutableStateOf(false)
@@ -114,6 +118,8 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         isDefault = isMessagingApp()
+        // A contact may have been added or edited while we were away.
+        messageStore.refreshContacts()
         version++
     }
 
@@ -142,9 +148,11 @@ class MainActivity : ComponentActivity() {
 
     @androidx.compose.runtime.Composable
     private fun Messages() {
-        val store = MessageStore(this)
+        val store = messageStore
         var tab by rememberSaveable { mutableStateOf(ChatTab.PEOPLE) }
-        val chats by produceState(emptyList<Chat>(), version) { value = withContext(Dispatchers.IO) { store.chats() } }
+        val chats by produceState(lastChats, version) {
+            value = withContext(Dispatchers.IO) { store.chats() }.also { lastChats = it }
+        }
         val thread = openThread
         val chat = chats.firstOrNull { it.threadId == thread }
             ?: thread?.takeIf { startPeople.isNotEmpty() }?.let {

@@ -3,7 +3,6 @@ package io.github.secnewt.messages.sms
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
-import android.provider.ContactsContract.PhoneLookup
 import android.provider.Telephony
 import io.github.secnewt.messages.chats.Attachment
 import io.github.secnewt.messages.chats.Chat
@@ -22,7 +21,8 @@ import io.github.secnewt.messages.reactions.Reactions
 class MessageStore(private val context: Context) {
 
     private val resolver get() = context.contentResolver
-    private val known = mutableMapOf<String, Person>()
+    // Shared by the screens' background loads, so these caches must be safe across threads.
+    private val known = java.util.concurrent.ConcurrentHashMap<String, Person>()
     private val groupNames = GroupNames(context)
     private val chatSettings = io.github.secnewt.messages.settings.SettingsStore(context)
 
@@ -31,11 +31,12 @@ class MessageStore(private val context: Context) {
         val threads = Telephony.Threads.CONTENT_URI.buildUpon().appendQueryParameter("simple", "true").build()
         val columns = arrayOf(Telephony.Threads._ID, Telephony.Threads.DATE, Telephony.Threads.RECIPIENT_IDS, Telephony.Threads.SNIPPET)
         val unread = unreadByThread()
+        val addresses = canonicalAddresses()
         return resolver.query(threads, columns, null, null, "${Telephony.Threads.DATE} DESC")?.use { c ->
             buildList {
                 while (c.moveToNext()) {
                     val id = c.getLong(0)
-                    val people = c.getString(2).orEmpty().split(' ').mapNotNull { it.toLongOrNull()?.let(::address) }.map(::person)
+                    val people = c.getString(2).orEmpty().split(' ').mapNotNull { it.toLongOrNull()?.let(addresses::get) }.map(::person)
                     if (people.isEmpty()) continue
                     val snippet = c.getString(3).orEmpty()
                     add(Chat(id, people, shownSnippet(snippet), c.getLong(1), unread = unread[id] ?: 0, name = groupNames.name(id), pinned = chatSettings.pinned(id), muted = chatSettings.muted(id)))
@@ -69,68 +70,78 @@ class MessageStore(private val context: Context) {
     /** Picture and group messages in a chat, oldest first. */
     private fun rawMms(threadId: Long, limit: Int, unreadOnly: Boolean = false): List<Message> {
         val columns = arrayOf(Telephony.Mms._ID, Telephony.Mms.DATE, Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_TYPE)
-        var where = "${Telephony.Mms.THREAD_ID} = ?"
+        var where = "${Telephony.Mms.THREAD_ID} = ? AND $REAL_MMS"
         if (unreadOnly) where += " AND ${Telephony.Mms.READ} = 0 AND ${Telephony.Mms.MESSAGE_BOX} = ${Telephony.Mms.MESSAGE_BOX_INBOX}"
-        return resolver.query(Telephony.Mms.CONTENT_URI, columns, where, arrayOf(threadId.toString()), "${Telephony.Mms.DATE} DESC LIMIT $limit")?.use { c ->
-            buildList {
-                while (c.moveToNext()) {
-                    val id = c.getLong(0)
-                    val incoming = c.getInt(2) == Telephony.Mms.MESSAGE_BOX_INBOX
-                    val waiting = c.getInt(3) == PduHeadersNotification
-                    val found = if (waiting) Parts() else parts(id)
-                    val from = if (incoming) person(mmsSender(id).orEmpty()) else null
-                    add(
-                        Message(
-                            -id,
-                            if (waiting) "Picture or group message, not downloaded yet" else found.text,
-                            c.getLong(1) * 1000, from, images = found.images, files = found.files, waiting = waiting,
-                        ),
-                    )
-                }
-            }.asReversed()
+        data class Row(val id: Long, val date: Long, val incoming: Boolean, val waiting: Boolean)
+        val rows = resolver.query(Telephony.Mms.CONTENT_URI, columns, where, arrayOf(threadId.toString()), "${Telephony.Mms.DATE} DESC LIMIT $limit")?.use { c ->
+            buildList { while (c.moveToNext()) add(Row(c.getLong(0), c.getLong(1), c.getInt(2) == Telephony.Mms.MESSAGE_BOX_INBOX, c.getInt(3) == PduHeadersNotification)) }
         }.orEmpty()
+        // Every message's words and files in one query, instead of one per message.
+        val allParts = parts(rows.filterNot { it.waiting }.map { it.id })
+        return rows.map { row ->
+            val id = row.id
+            val waiting = row.waiting
+            val found = allParts[id] ?: Parts()
+            val from = if (row.incoming) person(mmsSender(id).orEmpty()) else null
+            Message(
+                -id,
+                if (waiting) "Picture or group message, not downloaded yet" else found.text,
+                row.date * 1000, from, images = found.images, files = found.files, waiting = waiting,
+            )
+        }.asReversed()
     }
 
     private data class Parts(val text: String = "", val images: List<String> = emptyList(), val files: List<Attachment> = emptyList())
 
-    /** A message's words, pictures, and any other files. */
-    private fun parts(mmsId: Long): Parts {
-        val text = StringBuilder()
-        val images = mutableListOf<String>()
-        val files = mutableListOf<Attachment>()
-        resolver.query(
-            Uri.parse("content://mms/part"),
-            arrayOf(
-                Telephony.Mms.Part._ID, Telephony.Mms.Part.CONTENT_TYPE, Telephony.Mms.Part.TEXT,
-                Telephony.Mms.Part.FILENAME, Telephony.Mms.Part.NAME, Telephony.Mms.Part.CONTENT_LOCATION,
-            ),
-            "${Telephony.Mms.Part.MSG_ID} = ?", arrayOf(mmsId.toString()), null,
-        )?.use { c ->
-            while (c.moveToNext()) {
-                val type = c.getString(1).orEmpty().lowercase()
-                val uri = "content://mms/part/${c.getLong(0)}"
-                when {
-                    type == "text/plain" -> c.getString(2)?.let { if (text.isNotEmpty()) text.append('\n'); text.append(it) }
-                    // The layout file that says where things go on screen; nothing to show.
-                    type == "application/smil" -> Unit
-                    type.startsWith("image/") -> images += uri
-                    else -> {
-                        val name = listOf(c.getString(3), c.getString(4), c.getString(5)).firstOrNull { !it.isNullOrBlank() }
-                            ?: "attachment"
-                        files += Attachment(uri, name, type)
+    /** Messages' words, pictures and other files, for many messages in one query. */
+    private fun parts(mmsIds: List<Long>): Map<Long, Parts> {
+        if (mmsIds.isEmpty()) return emptyMap()
+        val text = mutableMapOf<Long, StringBuilder>()
+        val images = mutableMapOf<Long, MutableList<String>>()
+        val files = mutableMapOf<Long, MutableList<Attachment>>()
+        // In chunks, so the query never gets too long for SQLite.
+        mmsIds.chunked(400).forEach { chunk ->
+            resolver.query(
+                Uri.parse("content://mms/part"),
+                arrayOf(
+                    Telephony.Mms.Part.MSG_ID, Telephony.Mms.Part._ID, Telephony.Mms.Part.CONTENT_TYPE, Telephony.Mms.Part.TEXT,
+                    Telephony.Mms.Part.FILENAME, Telephony.Mms.Part.NAME, Telephony.Mms.Part.CONTENT_LOCATION,
+                ),
+                "${Telephony.Mms.Part.MSG_ID} IN (${chunk.joinToString(",")})", null, null,
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    val mid = c.getLong(0)
+                    val type = c.getString(2).orEmpty().lowercase()
+                    val uri = "content://mms/part/${c.getLong(1)}"
+                    when {
+                        type == "text/plain" -> c.getString(3)?.let { words ->
+                            val b = text.getOrPut(mid) { StringBuilder() }
+                            if (b.isNotEmpty()) b.append('\n')
+                            b.append(words)
+                        }
+                        // The layout file that says where things go on screen; nothing to show.
+                        type == "application/smil" -> Unit
+                        type.startsWith("image/") -> images.getOrPut(mid) { mutableListOf() } += uri
+                        else -> {
+                            val name = listOf(c.getString(4), c.getString(5), c.getString(6)).firstOrNull { !it.isNullOrBlank() } ?: "attachment"
+                            files.getOrPut(mid) { mutableListOf() } += Attachment(uri, name, type)
+                        }
                     }
                 }
             }
         }
-        return Parts(text.toString(), images, files)
+        return mmsIds.associateWith { Parts(text[it]?.toString().orEmpty(), images[it].orEmpty(), files[it].orEmpty()) }
     }
 
     /** Who sent an incoming MMS (address type 137 is "from"). */
-    private fun mmsSender(mmsId: Long): String? =
+    private val senders = java.util.concurrent.ConcurrentHashMap<Long, String>()
+
+    private fun mmsSender(mmsId: Long): String? = senders[mmsId] ?: run {
         resolver.query(
             Uri.parse("content://mms/$mmsId/addr"), arrayOf(Telephony.Mms.Addr.ADDRESS),
             "${Telephony.Mms.Addr.TYPE} = 137", null, null,
-        )?.use { if (it.moveToFirst()) it.getString(0) else null }
+        )?.use { if (it.moveToFirst()) it.getString(0) else null }?.also { senders[mmsId] = it }
+    }
 
     /** Where a not-yet-downloaded message waits at the carrier, for Retry. */
     fun waitingNotice(messageId: Long): Pair<Uri, String>? {
@@ -251,24 +262,53 @@ class MessageStore(private val context: Context) {
 
     fun person(address: String): Person = known.getOrPut(address) {
         if (address.isBlank()) return@getOrPut Person(address)
-        try {
-            val uri = Uri.withAppendedPath(PhoneLookup.CONTENT_FILTER_URI, Uri.encode(address))
-            resolver.query(
-                uri, arrayOf(PhoneLookup.DISPLAY_NAME, PhoneLookup.PHOTO_THUMBNAIL_URI, PhoneLookup._ID, PhoneLookup.LOOKUP_KEY), null, null, null,
-            )?.use {
-                if (!it.moveToFirst()) return@use null
-                val contact = android.provider.ContactsContract.Contacts.getLookupUri(it.getLong(2), it.getString(3))
-                Person(address, it.getString(0), it.getString(1), contact?.toString())
-            } ?: Person(address)
-        } catch (e: Exception) {
-            // No contacts access: show the number.
-            Person(address)
-        }
+        contacts()[numberKey(address)]?.let { c -> Person(address, c.name, c.photo, c.contact) } ?: Person(address)
     }
 
-    private fun address(recipientId: Long): String? =
-        resolver.query(Uri.parse("content://mms-sms/canonical-address/$recipientId"), null, null, null, null)
-            ?.use { if (it.moveToFirst()) it.getString(it.getColumnIndexOrThrow("address")) else null }
+    private class Saved(val name: String, val photo: String?, val contact: String?)
+
+    // Every saved number, read once in a single query (not one lookup per chat).
+    @Volatile private var savedNumbers: Map<String, Saved>? = null
+
+    private fun contacts(): Map<String, Saved> = savedNumbers ?: try {
+        resolver.query(
+            android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(
+                android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER,
+                android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                android.provider.ContactsContract.CommonDataKinds.Phone.PHOTO_THUMBNAIL_URI,
+                android.provider.ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
+                android.provider.ContactsContract.CommonDataKinds.Phone.LOOKUP_KEY,
+            ),
+            null, null, null,
+        )?.use { c ->
+            buildMap {
+                while (c.moveToNext()) {
+                    val number = c.getString(0) ?: continue
+                    val name = c.getString(1) ?: continue
+                    val contact = android.provider.ContactsContract.Contacts.getLookupUri(c.getLong(3), c.getString(4))?.toString()
+                    putIfAbsent(numberKey(number), Saved(name, c.getString(2), contact))
+                }
+            }
+        }.orEmpty()
+    } catch (e: SecurityException) {
+        // No contacts access: numbers are shown as they are.
+        emptyMap()
+    }.also { savedNumbers = it }
+
+    /** Contacts may have changed (an edit, a new contact): read them again next time. */
+    fun refreshContacts() {
+        savedNumbers = null
+        known.clear()
+    }
+
+    /** One chat's phone numbers, by their ids in the message store, in a single query. */
+    private fun canonicalAddresses(): Map<Long, String> =
+        resolver.query(Uri.parse("content://mms-sms/canonical-addresses"), null, null, null, null)?.use { c ->
+            val id = c.getColumnIndexOrThrow("_id")
+            val address = c.getColumnIndexOrThrow("address")
+            buildMap { while (c.moveToNext()) c.getString(address)?.let { put(c.getLong(id), it) } }
+        }.orEmpty()
 
     private fun unreadByThread(): Map<Long, Int> {
         val counts = mutableMapOf<Long, Int>()
@@ -279,7 +319,7 @@ class MessageStore(private val context: Context) {
                 if (Reactions.parse(c.getString(1).orEmpty()) == null) counts.merge(c.getLong(0), 1, Int::plus)
             }
         }
-        resolver.query(Telephony.Mms.Inbox.CONTENT_URI, arrayOf(Telephony.Mms.THREAD_ID), "${Telephony.Mms.READ} = 0", null, null)?.use { c ->
+        resolver.query(Telephony.Mms.Inbox.CONTENT_URI, arrayOf(Telephony.Mms.THREAD_ID), "${Telephony.Mms.READ} = 0 AND $REAL_MMS", null, null)?.use { c ->
             while (c.moveToNext()) counts.merge(c.getLong(0), 1, Int::plus)
         }
         return counts
@@ -289,8 +329,40 @@ class MessageStore(private val context: Context) {
     private fun shownSnippet(snippet: String): String =
         Reactions.parse(snippet)?.let(Folding::orphanText) ?: snippet.ifBlank { "📷 Picture" }
 
+    /**
+     * How many unread messages show in the chat list, all chats together. Newt Home shows the
+     * same number, so the two always agree: messages in a chat with no readable number, and
+     * delivery or read receipts, aren't counted.
+     */
+    fun unreadCount(): Int {
+        val unread = unreadByThread()
+        if (unread.isEmpty()) return 0
+        val addresses = canonicalAddresses()
+        val threads = Telephony.Threads.CONTENT_URI.buildUpon().appendQueryParameter("simple", "true").build()
+        return resolver.query(threads, arrayOf(Telephony.Threads._ID, Telephony.Threads.RECIPIENT_IDS), null, null, null)?.use { c ->
+            var total = 0
+            while (c.moveToNext()) {
+                val shown = c.getString(1).orEmpty().split(' ').any { it.toLongOrNull()?.let(addresses::containsKey) == true }
+                if (shown) total += unread[c.getLong(0)] ?: 0
+            }
+            total
+        } ?: 0
+    }
+
     private companion object {
         /** MMS message type 130: a notice that a message is waiting at the carrier. */
         const val PduHeadersNotification = 130
+
+        /**
+         * Real messages only: sent (128), waiting (130) and downloaded (132). Not delivery
+         * reports (134) or read reports (136), which Android also files in the inbox.
+         */
+        val REAL_MMS = "${Telephony.Mms.MESSAGE_TYPE} IN (128, 130, 132)"
+
+        /** Numbers compare by their last 10 digits, so "+1 (972) 555-0111" matches "9725550111". */
+        fun numberKey(number: String): String {
+            val digits = number.filter { it.isDigit() }
+            return if (digits.length >= 10) digits.takeLast(10) else number.trim().lowercase()
+        }
     }
 }
