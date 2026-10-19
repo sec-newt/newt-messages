@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Badge
@@ -83,16 +84,29 @@ fun ChatListScreen(
     time: (Long) -> String,
     onOpenSettings: () -> Unit = {},
     onDelete: ((Chat) -> Unit)? = null,
+    onNewChat: (() -> Unit)? = null,
 ) {
     var deleting by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Chat?>(null) }
     deleting?.let { chat ->
         DeleteChatDialog(chat.title, onDelete = { deleting = null; onDelete?.invoke(chat) }, onCancel = { deleting = null })
     }
-    Scaffold(bottomBar = { ChatTabBar(chats, tab, onTab) }) { padding ->
+    Scaffold(
+        bottomBar = { ChatTabBar(chats, tab, onTab) },
+        floatingActionButton = {
+            if (onNewChat != null) {
+                androidx.compose.material3.ExtendedFloatingActionButton(
+                    onClick = onNewChat,
+                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                    text = { Text("New message", style = MaterialTheme.typography.titleMedium) },
+                )
+            }
+        },
+    ) { padding ->
         val shown = ChatSorting.inTab(chats, tab)
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+            // Room at the bottom so the New message button never covers the last chat.
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
         ) {
             item { TabHeader(tab.label, onOpenSettings) }
             if (shown.isEmpty()) {

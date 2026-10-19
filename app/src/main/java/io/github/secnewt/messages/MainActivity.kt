@@ -39,6 +39,7 @@ import io.github.secnewt.messages.sms.MessageStore
 import io.github.secnewt.messages.sms.SmsSender
 import io.github.secnewt.messages.ui.ChatDetailsScreen
 import io.github.secnewt.messages.ui.ChatListScreen
+import io.github.secnewt.messages.ui.NewChatScreen
 import android.provider.ContactsContract
 import io.github.secnewt.messages.ui.ChatScreen
 import io.github.secnewt.messages.ui.WelcomeScreen
@@ -54,6 +55,7 @@ class MainActivity : ComponentActivity() {
     private var openThread by mutableStateOf<Long?>(null)
     private var isDefault by mutableStateOf(false)
     private var showDetails by mutableStateOf(false)
+    private var newChat by mutableStateOf(false)
     // Where a number chosen from contacts goes (the Add someone dialog).
     private var picked: ((String) -> Unit)? = null
     private val pickNumber = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -147,10 +149,22 @@ class MainActivity : ComponentActivity() {
             ?: thread?.takeIf { startPeople.isNotEmpty() }?.let {
                 Chat(it, startPeople.map(store::person), "", System.currentTimeMillis(), name = GroupNames(this).name(it))
             }
+        if (newChat) {
+            BackHandler { newChat = false }
+            val contacts by produceState(emptyList<io.github.secnewt.messages.chats.ContactNumber>()) {
+                value = withContext(Dispatchers.IO) { contactNumbers() }
+            }
+            NewChatScreen(contacts, onBack = { newChat = false }, onStart = { numbers ->
+                newChat = false
+                open(numbers)
+            })
+            return
+        }
         if (thread == null || chat == null) {
             ChatListScreen(
                 chats, tab, onTab = { tab = it }, onOpen = { openThread = it.threadId }, time = ::time,
                 onDelete = { chat -> Thread { delete(chat.threadId) }.start() },
+                onNewChat = { newChat = true },
             )
             return
         }
@@ -241,6 +255,31 @@ class MainActivity : ComponentActivity() {
             listOf(bytes to "image/jpeg")
         }.orEmpty()
         Mms.send(this, to, text, images)
+    }
+
+    /** Every contact's phone numbers, for New message. Empty without contacts access. */
+    private fun contactNumbers(): List<io.github.secnewt.messages.chats.ContactNumber> = try {
+        contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                ContactsContract.CommonDataKinds.Phone.NUMBER,
+                ContactsContract.CommonDataKinds.Phone.TYPE,
+                ContactsContract.CommonDataKinds.Phone.LABEL,
+            ),
+            null, null, null,
+        )?.use { c ->
+            buildList {
+                while (c.moveToNext()) {
+                    val name = c.getString(0) ?: continue
+                    val number = c.getString(1) ?: continue
+                    val label = ContactsContract.CommonDataKinds.Phone.getTypeLabel(resources, c.getInt(2), c.getString(3)).toString()
+                    add(io.github.secnewt.messages.chats.ContactNumber(name, number, label))
+                }
+            }.distinctBy { it.name to it.number.filter(Char::isDigit) }
+        }.orEmpty()
+    } catch (e: SecurityException) {
+        emptyList()
     }
 
     /** Opens the chat with exactly these people, starting it if it's new. */

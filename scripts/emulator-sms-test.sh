@@ -101,6 +101,26 @@ grep -q 'text="2 people, plus you"' ui.xml && grep -q 'text="Small group"' ui.xm
   || { grep -o 'text="[^"]*"' ui.xml | head -20; fail "Removing someone didn't open a new group with the others."; }
 echo "Removing someone from a group works."
 
+# Starting a new chat: back to the list, New message, type a number, add it, open the chat.
+adb shell am start -W -n "$pkg/io.github.secnewt.messages.MainActivity" > /dev/null
+adb shell input keyevent KEYCODE_BACK
+sleep 1
+adb shell input keyevent KEYCODE_BACK
+sleep 1
+adb shell am start -W -n "$pkg/io.github.secnewt.messages.MainActivity" > /dev/null
+sleep 2
+tap "New message"
+tap "Name or number"
+adb shell input text "5550177"
+sleep 1
+tap "Add 5550177"
+tap "Text 5550177"
+adb shell uiautomator dump /sdcard/ui.xml > /dev/null
+adb pull /sdcard/ui.xml ui.xml > /dev/null
+grep -q 'content-desc="Send"' ui.xml && grep -q 'text="5550177"' ui.xml \
+  || { grep -o 'text="[^"]*"\|content-desc="[^"]*"' ui.xml | head -20; fail "New message didn't open a chat with the typed number."; }
+echo "Starting a new chat works."
+
 adb logcat -d > after.log
 if grep -q "FATAL EXCEPTION" after.log; then
   grep -A20 "FATAL EXCEPTION" after.log

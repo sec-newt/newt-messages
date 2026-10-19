@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performScrollToNode
@@ -166,6 +167,36 @@ class ChatScreensTest {
             SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
             time = SampleChats.time, onSave = { _, _, _ -> }, onDetails = {},
         )
+    }
+
+    private val contacts = listOf(
+        io.github.secnewt.messages.chats.ContactNumber("Becca", "+19725550111", "Mobile"),
+        io.github.secnewt.messages.chats.ContactNumber("Mom", "+19725550144", "Home"),
+        io.github.secnewt.messages.chats.ContactNumber("Pastor Dave", "+14695550133", "Work"),
+    )
+
+    @Test fun newChatDark() = composeRule.newtScreenshot("new-chat-dark", dark = true) { NewChatScreen(contacts, onBack = {}, onStart = {}) }
+    @Test fun newChatLargeText() = composeRule.newtScreenshot("new-chat-200pct", dark = false, fontScale = 2f) { NewChatScreen(contacts, onBack = {}, onStart = {}) }
+
+    @Test
+    fun pickingTwoPeopleStartsAGroup() {
+        var started: List<String>? = null
+        composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { NewChatScreen(contacts, onBack = {}, onStart = { started = it }) } }
+        composeRule.onNodeWithText("Becca").performClick()
+        composeRule.onNodeWithText("Text Becca").assertIsDisplayed()
+        composeRule.onNodeWithText("Mom").performClick()
+        composeRule.onNodeWithText("Start a group of 2").performClick()
+        assertEquals(listOf("+19725550111", "+19725550144"), started)
+    }
+
+    @Test
+    fun typingANumberAddsIt() {
+        var started: List<String>? = null
+        composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { NewChatScreen(contacts, onBack = {}, onStart = { started = it }) } }
+        composeRule.onNode(androidx.compose.ui.test.hasSetTextAction()).performTextInput("214 555 0199")
+        composeRule.onNodeWithText("Add 214 555 0199").performClick()
+        composeRule.onNodeWithText("Text 214 555 0199").performClick()
+        assertEquals(listOf("214 555 0199"), started)
     }
 
     @Test
