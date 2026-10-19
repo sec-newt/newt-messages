@@ -360,7 +360,11 @@ class ChatScreensTest {
                 ChatScreen(SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {}, time = SampleChats.time)
             }
         }
-        composeRule.onNodeWithText("❤️ 2").performClick()
+        // Tapping the chip and the screen reader's action open the same list.
+        composeRule.onNodeWithContentDescription("You: I can do the brisket", substring = true)
+            .fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.CustomActions]
+            .first { it.label == "See who reacted" }.action()
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("Reactions").assertIsDisplayed()
         composeRule.onNodeWithText("Mom, Becca").assertIsDisplayed()
         composeRule.onNodeWithText("Sam").assertIsDisplayed()

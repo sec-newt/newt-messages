@@ -155,7 +155,10 @@ private fun Bubble(
     onShowReactions: () -> Unit = {},
 ) {
     // Long-press for react / copy / delete; screen readers get it as an action instead.
-    val options = onOptions?.let { open -> listOf(androidx.compose.ui.semantics.CustomAccessibilityAction("Message options") { open(); true }) }
+    val options = listOfNotNull(
+        onOptions?.let { open -> androidx.compose.ui.semantics.CustomAccessibilityAction("Message options") { open(); true } },
+        if (message.reactions.isNotEmpty()) androidx.compose.ui.semantics.CustomAccessibilityAction("See who reacted") { onShowReactions(); true } else null,
+    ).ifEmpty { null }
     val who = message.from?.shownName
     val color = if (who == null) MaterialTheme.colorScheme.primary else personOutline(who)
     val reactions = message.reactions.joinToString(", ") { r -> "${r.emoji} from ${r.from?.shownName ?: "you"}" }
