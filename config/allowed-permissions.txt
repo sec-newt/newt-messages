@@ -8,3 +8,17 @@
 # Added automatically by AndroidX so the app's own broadcast receivers stay private:
 io.github.secnewt.messages.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
 io.github.secnewt.messages.debug.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+#
+# Read the phone's messages to show chats. Android only grants it to the default messaging app.
+android.permission.READ_SMS
+# Send texts I write.
+android.permission.SEND_SMS
+# Receive texts. Required of every default messaging app.
+android.permission.RECEIVE_SMS
+# Receive picture and group messages (MMS). Required of every default messaging app.
+android.permission.RECEIVE_MMS
+android.permission.RECEIVE_WAP_PUSH
+# Show contacts' names instead of numbers. Read only; never changed or sent anywhere.
+android.permission.READ_CONTACTS
+# Notify me of new messages.
+android.permission.POST_NOTIFICATIONS
