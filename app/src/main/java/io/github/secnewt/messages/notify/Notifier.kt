@@ -88,15 +88,18 @@ class Notifier(private val context: Context) {
         post(REACTION_ID_OFFSET + threadId.toInt(), notification)
     }
 
-    fun mmsNotSupported() {
-        if (!allowed()) return
+    /** A picture message couldn't download; the chat has a Download button to try again. */
+    fun mmsFailed(threadId: Long) {
+        val text = "A picture or group message couldn't download. Open the chat and tap Download to try again."
         val notification = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
             .setSmallIcon(R.drawable.ic_launcher_monochrome)
-            .setContentTitle("A picture or group message is waiting")
-            .setContentText("Newt Messages can't download these yet. Switch back to your old messaging app to get it.")
-            .setStyle(NotificationCompat.BigTextStyle().bigText("Newt Messages can't download these yet. Switch back to your old messaging app to get it."))
+            .setContentTitle("A message couldn't download")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(open(threadId))
+            .setAutoCancel(true)
             .build()
-        post(MMS_ID, notification)
+        post(MMS_ID + threadId.toInt(), notification)
     }
 
     fun cancel(threadId: Long) = manager.cancel(threadId.toInt())

@@ -13,8 +13,9 @@ import io.github.secnewt.messages.reactions.Reactions
 
 /**
  * Reads and writes Android's shared message store (the same one every messaging app uses, so
- * switching apps loses nothing). Only the default messaging app may write to it. SMS only for
- * now; picture and group messages (MMS) come next.
+ * switching apps loses nothing). Only the default messaging app may write to it. Texts (SMS)
+ * and picture or group messages (MMS) are read together; MMS messages get negative ids here so
+ * the two never collide.
  */
 class MessageStore(private val context: Context) {
 
@@ -42,8 +43,11 @@ class MessageStore(private val context: Context) {
     /** A chat's messages as shown (reactions folded onto their messages), oldest first. */
     fun messages(threadId: Long, limit: Int = 600): List<Message> = Folding.fold(raw(threadId, limit))
 
-    /** The stored texts, reactions included, oldest first. */
-    fun raw(threadId: Long, limit: Int = 600): List<Message> {
+    /** Every stored message (SMS and MMS), reactions included, oldest first. */
+    fun raw(threadId: Long, limit: Int = 600): List<Message> =
+        (rawSms(threadId, limit) + rawMms(threadId, limit)).sortedBy { it.timeMillis }.takeLast(limit)
+
+    private fun rawSms(threadId: Long, limit: Int): List<Message> {
         val columns = arrayOf(Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE, Telephony.Sms.TYPE)
         return resolver.query(
             Telephony.Sms.CONTENT_URI, columns, "${Telephony.Sms.THREAD_ID} = ?", arrayOf(threadId.toString()),
@@ -58,8 +62,69 @@ class MessageStore(private val context: Context) {
         }.orEmpty()
     }
 
-    /** Unread texts in a chat that aren't reactions, oldest first, for its notification. */
-    fun unreadTexts(threadId: Long): List<Message> {
+    /** Picture and group messages in a chat, oldest first. */
+    private fun rawMms(threadId: Long, limit: Int, unreadOnly: Boolean = false): List<Message> {
+        val columns = arrayOf(Telephony.Mms._ID, Telephony.Mms.DATE, Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_TYPE)
+        var where = "${Telephony.Mms.THREAD_ID} = ?"
+        if (unreadOnly) where += " AND ${Telephony.Mms.READ} = 0 AND ${Telephony.Mms.MESSAGE_BOX} = ${Telephony.Mms.MESSAGE_BOX_INBOX}"
+        return resolver.query(Telephony.Mms.CONTENT_URI, columns, where, arrayOf(threadId.toString()), "${Telephony.Mms.DATE} DESC LIMIT $limit")?.use { c ->
+            buildList {
+                while (c.moveToNext()) {
+                    val id = c.getLong(0)
+                    val incoming = c.getInt(2) == Telephony.Mms.MESSAGE_BOX_INBOX
+                    val waiting = c.getInt(3) == PduHeadersNotification
+                    val (text, images) = if (waiting) "" to emptyList() else parts(id)
+                    val from = if (incoming) person(mmsSender(id).orEmpty()) else null
+                    add(
+                        Message(
+                            -id,
+                            if (waiting) "Picture or group message, not downloaded yet" else text,
+                            c.getLong(1) * 1000, from, images = images, waiting = waiting,
+                        ),
+                    )
+                }
+            }.asReversed()
+        }.orEmpty()
+    }
+
+    /** A message's words and pictures. */
+    private fun parts(mmsId: Long): Pair<String, List<String>> {
+        val text = StringBuilder()
+        val images = mutableListOf<String>()
+        resolver.query(
+            Uri.parse("content://mms/part"), arrayOf(Telephony.Mms.Part._ID, Telephony.Mms.Part.CONTENT_TYPE, Telephony.Mms.Part.TEXT),
+            "${Telephony.Mms.Part.MSG_ID} = ?", arrayOf(mmsId.toString()), null,
+        )?.use { c ->
+            while (c.moveToNext()) {
+                val type = c.getString(1).orEmpty()
+                when {
+                    type == "text/plain" -> c.getString(2)?.let { if (text.isNotEmpty()) text.append('\n'); text.append(it) }
+                    type.startsWith("image/") -> images += "content://mms/part/${c.getLong(0)}"
+                }
+            }
+        }
+        return text.toString() to images
+    }
+
+    /** Who sent an incoming MMS (address type 137 is "from"). */
+    private fun mmsSender(mmsId: Long): String? =
+        resolver.query(
+            Uri.parse("content://mms/$mmsId/addr"), arrayOf(Telephony.Mms.Addr.ADDRESS),
+            "${Telephony.Mms.Addr.TYPE} = 137", null, null,
+        )?.use { if (it.moveToFirst()) it.getString(0) else null }
+
+    /** Where a not-yet-downloaded message waits at the carrier, for Retry. */
+    fun waitingNotice(messageId: Long): Pair<Uri, String>? {
+        val uri = Uri.withAppendedPath(Telephony.Mms.CONTENT_URI, (-messageId).toString())
+        return resolver.query(uri, arrayOf(Telephony.Mms.CONTENT_LOCATION), null, null, null)
+            ?.use { if (it.moveToFirst()) it.getString(0)?.let { location -> uri to location } else null }
+    }
+
+    /** Unread messages in a chat that aren't reactions, oldest first, for its notification. */
+    fun unreadTexts(threadId: Long): List<Message> = (unreadSms(threadId) + rawMms(threadId, 50, unreadOnly = true))
+        .filter { Reactions.parse(it.body) == null }.sortedBy { it.timeMillis }
+
+    private fun unreadSms(threadId: Long): List<Message> {
         val columns = arrayOf(Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE)
         return resolver.query(
             Telephony.Sms.Inbox.CONTENT_URI, columns,
@@ -115,6 +180,7 @@ class MessageStore(private val context: Context) {
             put(Telephony.Sms.SEEN, 1)
         }
         resolver.update(Telephony.Sms.Inbox.CONTENT_URI, values, "${Telephony.Sms.THREAD_ID} = ? AND ${Telephony.Sms.READ} = 0", arrayOf(threadId.toString()))
+        resolver.update(Telephony.Mms.Inbox.CONTENT_URI, values, "${Telephony.Mms.THREAD_ID} = ? AND ${Telephony.Mms.READ} = 0", arrayOf(threadId.toString()))
     }
 
     fun threadOf(uri: Uri): Long? =
@@ -149,9 +215,18 @@ class MessageStore(private val context: Context) {
                 if (Reactions.parse(c.getString(1).orEmpty()) == null) counts.merge(c.getLong(0), 1, Int::plus)
             }
         }
+        resolver.query(Telephony.Mms.Inbox.CONTENT_URI, arrayOf(Telephony.Mms.THREAD_ID), "${Telephony.Mms.READ} = 0", null, null)?.use { c ->
+            while (c.moveToNext()) counts.merge(c.getLong(0), 1, Int::plus)
+        }
         return counts
     }
 
     /** The chat list shows a reaction as "❤️ to “…”", not the raw text. */
-    private fun shownSnippet(snippet: String): String = Reactions.parse(snippet)?.let(Folding::orphanText) ?: snippet
+    private fun shownSnippet(snippet: String): String =
+        Reactions.parse(snippet)?.let(Folding::orphanText) ?: snippet.ifBlank { "📷 Picture" }
+
+    private companion object {
+        /** MMS message type 130: a notice that a message is waiting at the carrier. */
+        const val PduHeadersNotification = 130
+    }
 }

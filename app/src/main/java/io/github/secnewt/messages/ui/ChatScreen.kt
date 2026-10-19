@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -29,10 +30,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.secnewt.messages.chats.Chat
@@ -57,6 +60,12 @@ fun ChatScreen(
     time: (Long) -> String,
     /** Shown in place of the message box when this chat can't be sent to yet. */
     cantSend: String? = null,
+    /** Fetch a picture or group message that didn't download. */
+    onDownload: (Message) -> Unit = {},
+    /** Pick a picture to send; [attached] says what's attached, if anything. */
+    onAttach: (() -> Unit)? = null,
+    attached: String? = null,
+    onRemoveAttachment: () -> Unit = {},
 ) {
     Scaffold(
         topBar = { Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { ScreenHeader(chat.title, onBack) } },
@@ -69,7 +78,10 @@ fun ChatScreen(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                 )
             } else {
-                ComposeBar(draft, onDraftChange, onSend)
+                Column {
+                    if (attached != null) AttachmentLine(attached, onRemoveAttachment)
+                    ComposeBar(draft, onDraftChange, onSend, onAttach, canSend = draft.isNotBlank() || attached != null)
+                }
             }
         },
     ) { padding ->
@@ -80,24 +92,27 @@ fun ChatScreen(
             reverseLayout = true,
         ) {
             items(messages.asReversed(), key = { it.id }) { message ->
-                Bubble(message, showName = chat.isGroup, time = time(message.timeMillis))
+                Bubble(message, showName = chat.isGroup, time = time(message.timeMillis), onDownload = { onDownload(message) })
             }
         }
     }
 }
 
 @Composable
-private fun Bubble(message: Message, showName: Boolean, time: String) {
+private fun Bubble(message: Message, showName: Boolean, time: String, onDownload: () -> Unit) {
     val who = message.from?.shownName
     val color = if (who == null) MaterialTheme.colorScheme.primary else personOutline(who)
     val reactions = message.reactions.joinToString(", ") { r -> "${r.emoji} from ${r.from?.shownName ?: "you"}" }
     val spoken = buildString {
         append(if (who == null) "You" else who)
+        if (message.images.isNotEmpty()) append(", ${message.images.size} picture${if (message.images.size > 1) "s" else ""}")
         append(": ${message.body}. $time")
         if (reactions.isNotEmpty()) append(". Reactions: $reactions")
     }
     Row(
-        modifier = Modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = spoken },
+        modifier = Modifier.fillMaxWidth().then(
+            if (message.waiting) Modifier.semantics(mergeDescendants = true) {} else Modifier.clearAndSetSemantics { contentDescription = spoken },
+        ),
         horizontalArrangement = if (message.mine) Arrangement.End else Arrangement.Start,
     ) {
         Column(
@@ -123,8 +138,14 @@ private fun Bubble(message: Message, showName: Boolean, time: String) {
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 border = BorderStroke(2.dp, color),
             ) {
-                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    Text(message.body, style = MaterialTheme.typography.bodyLarge)
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    message.images.forEach { MmsImage(it) }
+                    if (message.body.isNotEmpty()) Text(message.body, style = MaterialTheme.typography.bodyLarge)
+                    if (message.waiting) {
+                        androidx.compose.material3.OutlinedButton(onClick = onDownload, modifier = Modifier.heightIn(min = 48.dp)) {
+                            Text("Download", style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
                     Text(time, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -148,8 +169,40 @@ private fun Bubble(message: Message, showName: Boolean, time: String) {
     }
 }
 
+/** A picture from the message store, shrunk to fit; a plain label until it loads. */
 @Composable
-private fun ComposeBar(draft: String, onDraftChange: (String) -> Unit, onSend: () -> Unit) {
+private fun MmsImage(uri: String) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val image by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, uri) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Pictures.thumbnail(context, uri) }
+    }
+    val loaded = image
+    if (loaded != null) {
+        androidx.compose.foundation.Image(
+            loaded, contentDescription = null,
+            modifier = Modifier.widthIn(max = 260.dp).heightIn(max = 320.dp),
+            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+        )
+    } else {
+        Text("📷 Picture", style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+@Composable
+private fun AttachmentLine(label: String, onRemove: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+    ) {
+        Text("📷 $label", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        androidx.compose.material3.TextButton(onClick = onRemove, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("Remove", style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+@Composable
+private fun ComposeBar(draft: String, onDraftChange: (String) -> Unit, onSend: () -> Unit, onAttach: (() -> Unit)?, canSend: Boolean) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -158,6 +211,11 @@ private fun ComposeBar(draft: String, onDraftChange: (String) -> Unit, onSend: (
             .imePadding()
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
+        if (onAttach != null) {
+            androidx.compose.material3.IconButton(onClick = onAttach, modifier = Modifier.size(56.dp)) {
+                Icon(Icons.Filled.Add, contentDescription = "Attach a picture")
+            }
+        }
         OutlinedTextField(
             value = draft,
             onValueChange = onDraftChange,
@@ -166,7 +224,7 @@ private fun ComposeBar(draft: String, onDraftChange: (String) -> Unit, onSend: (
             textStyle = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.weight(1f).heightIn(min = 56.dp),
         )
-        FilledIconButton(onClick = onSend, enabled = draft.isNotBlank(), modifier = Modifier.size(56.dp)) {
+        FilledIconButton(onClick = onSend, enabled = canSend, modifier = Modifier.size(56.dp)) {
             Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
         }
     }

@@ -88,10 +88,15 @@ receiving moves up into Phase 1, and switching waits for it.
 - [ ] Phase 1
   - [x] Foundations: tab sorting, 2FA code spotting, reaction parsing and matching, the chat
     list and chat screens (sample data only; not usable as the messaging app yet)
-  - [ ] Default messaging app: send and receive SMS, notifications with reply and Copy code,
+  - [x] Default messaging app: send and receive SMS, notifications with reply and Copy code,
     reactions folded and notified quietly (block list: Android drops blocked senders' texts
     before they reach any app; to confirm on the phone)
-  - [ ] MMS receive and send (needed before switching: group texts are MMS)
+  - [ ] MMS receive and send (needed before switching: group texts are MMS). Built on Android's
+    own MMS format code (AOSP, Apache 2.0) copied into `mms/`, see its README; not the Fossify
+    library, which comes from JitPack and pulls in OkHttp 2.5 (2015, known security bugs).
+    Android's MMS service does every network step, including the carrier acknowledgement.
+    The emulator has no MMS server, so CI tests the message format; the real test is on the
+    phone with QUIK still installed, starting with a throwaway group.
 - [ ] Phase 2
 - [ ] Phase 3
 
@@ -101,7 +106,8 @@ receiving moves up into Phase 1, and switching waits for it.
 - Speak just the sender, or read the message too?
 - How do iPhones show a reaction sent in Google's invisible-character form? (Expected:
   garbled, which is why iPhone wording is the default.)
-- Confirm the app needs no internet permission for MMS on GrapheneOS.
+- Confirm MMS works with no internet permission on GrapheneOS (expected: Android's MMS service
+  does the network part; first real test on the phone).
 
 ## Prior art
 

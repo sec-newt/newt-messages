@@ -3,6 +3,8 @@ package io.github.secnewt.messages.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -17,9 +19,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import io.github.secnewt.messages.R
 
-/** Shown until the app can be the phone's messaging app (after SMS and MMS both work). */
+/** Shown until Newt Messages is the phone's messaging app, with the button to make it so. */
 @Composable
-fun WelcomeScreen() {
+fun WelcomeScreen(onMakeDefault: () -> Unit = {}) {
     Scaffold { padding ->
         Column(
             modifier = Modifier
@@ -36,9 +38,21 @@ fun WelcomeScreen() {
                 modifier = Modifier.semantics { heading() },
             )
             Text(
-                text = "In development. It can't be your messaging app yet: keep using your current one until SMS and picture messages both work here.",
+                text = "Texts, picture messages and group chats. Your messages stay in Android's shared " +
+                    "message store, so switching apps loses nothing.",
                 style = MaterialTheme.typography.bodyLarge,
             )
+            Text(
+                text = "Still new: keep your old messaging app installed. To switch back, open Settings → " +
+                    "Apps → Default apps → SMS app and pick it again.",
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            androidx.compose.material3.Button(
+                onClick = onMakeDefault,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+            ) {
+                Text("Make Newt Messages my messaging app", style = MaterialTheme.typography.titleMedium)
+            }
         }
     }
 }

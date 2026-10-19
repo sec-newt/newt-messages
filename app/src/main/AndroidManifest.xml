@@ -81,6 +81,19 @@
         <!-- The app's own reports and notification buttons; nothing outside can reach them. -->
         <receiver android:name=".sms.SentReceiver" android:exported="false" />
         <receiver android:name=".notify.ActionReceiver" android:exported="false" />
+        <receiver android:name=".mms.MmsResultReceiver" android:exported="false" />
+
+        <!-- Hands one MMS file at a time to Android's MMS service (the phone process), which
+             does the downloading and sending. Not exported; access is granted per file. -->
+        <provider
+            android:name=".mms.MmsFileProvider"
+            android:authorities="${applicationId}.mmsfiles"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/mms_paths" />
+        </provider>
     </application>
 
 </manifest>
