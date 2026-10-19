@@ -39,14 +39,16 @@ adb shell dumpsys notification --noredact > notifications.txt
 grep -q "reacted" notifications.txt || fail "No reaction notification."
 echo "Reaction recognized, matched, and notified as a reaction."
 
-# The phone app's "reply with a message" path. The shell may not hold the permission that
-# guards it; if so, say so instead of failing, since the code path is the same SmsSender.
+# The phone app's "reply with a message" path, which uses the same SmsSender as the app.
+# Android won't start a background app's service from the shell, so open the app first.
+adb shell am start -W -n "$pkg/io.github.secnewt.messages.MainActivity" > /dev/null
+sleep 2
 adb logcat -c
 started="$(adb shell am startservice -n "$pkg/io.github.secnewt.messages.sms.RespondService" \
     -a android.intent.action.RESPOND_VIA_MESSAGE -d smsto:15555215554 --es android.intent.extra.TEXT 'Ping' 2>&1 || true)"
 echo "am startservice said: $started"
 if echo "$started" | grep -qi "error\|exception\|denial\|not allowed"; then
-  echo "::warning::The shell can't start the reply service (it lacks SEND_RESPOND_VIA_MESSAGE); sending wasn't tested here."
+  fail "Couldn't start the reply service, so sending wasn't tested."
 else
   # Sending and the text coming back can take a while on a cold emulator: wait up to 30 s.
   for _ in $(seq 15); do
