@@ -127,7 +127,16 @@ fun ChatScreen(
             }
         },
     ) { padding ->
+        // The newest message is item 0, at the bottom. When one arrives, the list would stay
+        // pinned to the message that was showing and leave the new one just off screen, so:
+        // follow new messages when already at the newest end, and always after I send one.
+        val list = androidx.compose.foundation.lazy.rememberLazyListState()
+        val newest = messages.lastOrNull()
+        androidx.compose.runtime.LaunchedEffect(newest?.id) {
+            if (newest != null && (newest.mine || list.firstVisibleItemIndex <= 1)) list.animateScrollToItem(0)
+        }
         LazyColumn(
+            state = list,
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
