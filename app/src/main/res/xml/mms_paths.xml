@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The only files the phone's MMS service may read or write: one folder in the app's cache. -->
+<paths>
+    <cache-path name="mms" path="mms/" />
+</paths>

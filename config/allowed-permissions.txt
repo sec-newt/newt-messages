@@ -20,5 +20,8 @@ android.permission.RECEIVE_MMS
 android.permission.RECEIVE_WAP_PUSH
 # Show contacts' names instead of numbers. Read only; never changed or sent anywhere.
 android.permission.READ_CONTACTS
+# My own number, so a group picture message doesn't list me as one of its members.
+# Optional: if it's refused, group messages still arrive.
+android.permission.READ_PHONE_NUMBERS
 # Notify me of new messages.
 android.permission.POST_NOTIFICATIONS

@@ -29,6 +29,8 @@ object SampleChats {
         Message(2, "I can do the brisket", 9 * HOUR, reactions = listOf(Reaction("❤️", mom), Reaction("❤️", becca), Reaction("😂", sam))),
         Message(3, "I'll bring the chairs", 10 * HOUR, sam, reactions = listOf(Reaction("👍", null))),
         Message(4, "Thank you both!", 11 * HOUR, becca),
+        Message(-5, "The new chairs", 11 * HOUR + 60_000, sam, images = listOf("content://mms/part/1")),
+        Message(-6, "Picture or group message, not downloaded yet", 11 * HOUR + 120_000, mom, waiting = true),
     )
 
     val time: (Long) -> String = { "${(it / HOUR - 1) % 12 + 1}:00 ${if (it / HOUR < 12) "AM" else "PM"}" }

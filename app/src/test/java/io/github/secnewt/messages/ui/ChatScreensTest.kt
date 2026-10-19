@@ -3,6 +3,7 @@ package io.github.secnewt.messages.ui
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
@@ -58,6 +59,29 @@ class ChatScreensTest {
         }
         composeRule.onNodeWithContentDescription("Family, 1 unread", substring = true).assertIsDisplayed().performClick()
         assertEquals(4L, opened?.threadId)
+    }
+
+    @Test
+    fun aMessageThatDidntDownloadCanBeRetried() {
+        var retried: Long? = null
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatScreen(
+                    SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
+                    time = SampleChats.time, onDownload = { retried = it.id },
+                )
+            }
+        }
+        composeRule.onNodeWithText("Download").assertIsDisplayed().performClick()
+        assertEquals(-6L, retried)
+    }
+
+    @Test
+    fun attachingAPicture() = composeRule.newtScreenshot("chat-attached-dark", dark = true) {
+        ChatScreen(
+            SampleChats.family, SampleChats.familyMessages, draft = "Look at this", onDraftChange = {}, onSend = {}, onBack = {},
+            time = SampleChats.time, onAttach = {}, attached = "1 picture",
+        )
     }
 
     @Test

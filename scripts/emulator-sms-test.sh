@@ -13,6 +13,7 @@ adb shell cmd role add-role-holder android.app.role.SMS "$pkg"
 adb shell cmd role get-role-holders android.app.role.SMS | grep -q "$pkg"
 adb shell pm grant "$pkg" android.permission.POST_NOTIFICATIONS
 adb shell pm grant "$pkg" android.permission.READ_CONTACTS
+adb shell pm grant "$pkg" android.permission.READ_PHONE_NUMBERS
 echo "App is the default messaging app."
 
 fail() {
@@ -48,7 +49,7 @@ adb shell am start -W -a android.intent.action.SENDTO -d smsto:15555215554 --es 
 sleep 4
 adb shell uiautomator dump /sdcard/ui.xml > /dev/null
 adb pull /sdcard/ui.xml ui.xml > /dev/null
-bounds="$(grep -o 'content-desc="Send"[^>]*bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' ui.xml | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]' | head -1)"
+bounds="$(grep -o 'content-desc="Send"[^>]*bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' ui.xml | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]' | head -1 || true)"
 [ -n "$bounds" ] || { grep -o 'text="[^"]*"' ui.xml | head -20; fail "The chat didn't open with a Send button."; }
 read -r x1 y1 x2 y2 <<< "$(echo "$bounds" | tr -c '0-9' ' ')"
 adb shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))

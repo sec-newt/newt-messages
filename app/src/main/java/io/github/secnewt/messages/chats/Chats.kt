@@ -15,6 +15,10 @@ data class Message(
     /** Who sent it; null when I did. */
     val from: Person? = null,
     val reactions: List<Reaction> = emptyList(),
+    /** Pictures in a picture message, as content addresses. */
+    val images: List<String> = emptyList(),
+    /** A picture or group message that hasn't downloaded yet (tap Download). */
+    val waiting: Boolean = false,
 ) {
     val mine: Boolean get() = from == null
 }

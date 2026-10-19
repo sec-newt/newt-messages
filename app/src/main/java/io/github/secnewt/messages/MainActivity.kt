@@ -13,6 +13,9 @@ import android.text.format.DateFormat
 import android.text.format.DateUtils
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.LaunchedEffect
@@ -25,6 +28,11 @@ import androidx.compose.runtime.setValue
 import io.github.secnewt.messages.chats.Chat
 import io.github.secnewt.messages.chats.ChatTab
 import io.github.secnewt.messages.chats.Message
+import io.github.secnewt.messages.mms.Mms
+import io.github.secnewt.messages.ui.Pictures
+import android.net.Uri
+import android.telephony.SmsManager
+import android.widget.Toast
 import io.github.secnewt.messages.notify.Notifier
 import io.github.secnewt.messages.sms.MessageStore
 import io.github.secnewt.messages.sms.SmsSender
@@ -41,6 +49,7 @@ class MainActivity : ComponentActivity() {
     // Goes up whenever the message store changes, so the screens reload.
     private var version by mutableIntStateOf(0)
     private var openThread by mutableStateOf<Long?>(null)
+    private var isDefault by mutableStateOf(false)
     private var startDraft by mutableStateOf("")
     // Who an "sms:" link was for, so a brand-new chat (no messages yet) can still open.
     private var startPeople by mutableStateOf<List<String>>(emptyList())
@@ -55,16 +64,30 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         handle(intent)
         contentResolver.registerContentObserver(Telephony.MmsSms.CONTENT_URI, true, changes)
+        isDefault = isMessagingApp()
         setContent {
             NewtTheme {
-                if (isMessagingApp()) Messages() else WelcomeScreen()
+                if (isDefault) Messages() else WelcomeScreen(onMakeDefault = ::askToBeDefault)
             }
         }
-        if (isMessagingApp()) {
-            val wanted = listOf(Manifest.permission.READ_CONTACTS, Manifest.permission.POST_NOTIFICATIONS)
-                .filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
-            if (wanted.isNotEmpty()) requestPermissions(wanted.toTypedArray(), 1)
-        }
+        askForPermissions()
+    }
+
+    // Android shows its own "Use Newt Messages as your SMS app?" question.
+    private val becomeDefault = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        isDefault = isMessagingApp()
+        askForPermissions()
+    }
+
+    private fun askToBeDefault() {
+        becomeDefault.launch(getSystemService(RoleManager::class.java).createRequestRoleIntent(RoleManager.ROLE_SMS))
+    }
+
+    private fun askForPermissions() {
+        if (!isDefault) return
+        val wanted = listOf(Manifest.permission.READ_CONTACTS, Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.READ_PHONE_NUMBERS)
+            .filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        if (wanted.isNotEmpty()) requestPermissions(wanted.toTypedArray(), 1)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -74,6 +97,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        isDefault = isMessagingApp()
         version++
     }
 
@@ -113,6 +137,11 @@ class MainActivity : ComponentActivity() {
             return
         }
         var draft by rememberSaveable(thread) { mutableStateOf(startDraft) }
+        // One picture at a time, picked with Android's photo picker (no photo permission needed).
+        var picture by rememberSaveable(thread) { mutableStateOf<String?>(null) }
+        val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+            if (uri != null) picture = uri.toString()
+        }
         val messages by produceState(emptyList<Message>(), thread, version) { value = withContext(Dispatchers.IO) { store.messages(thread) } }
         LaunchedEffect(thread, version) {
             withContext(Dispatchers.IO) {
@@ -126,17 +155,47 @@ class MainActivity : ComponentActivity() {
             onDraftChange = { draft = it },
             onSend = {
                 val text = draft.trim()
-                // Group texts need MMS, which comes next; one-to-one texts send now.
-                if (text.isNotEmpty() && !chat.isGroup) {
+                val attached = picture
+                if (text.isNotEmpty() || attached != null) {
                     draft = ""
                     startDraft = ""
-                    Thread { SmsSender.send(this, chat.people.first().address, text) }.start()
+                    picture = null
+                    Thread { send(chat, text, attached) }.start()
                 }
             },
             onBack = { openThread = null },
             time = ::time,
-            cantSend = if (chat.isGroup) "Sending to groups comes with picture messages (MMS), in the next update." else null,
+            onDownload = { message -> Thread { retry(message) }.start() },
+            onAttach = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            attached = picture?.let { "1 picture" },
+            onRemoveAttachment = { picture = null },
         )
+    }
+
+    /** One-to-one words go as a text; groups and pictures go as a picture message (MMS). */
+    private fun send(chat: Chat, text: String, picture: String?) {
+        val to = chat.people.map { it.address }
+        if (!chat.isGroup && picture == null) {
+            SmsSender.send(this, to.first(), text)
+            return
+        }
+        val images = picture?.let { uri ->
+            val limit = getSystemService(SmsManager::class.java).carrierConfigValues
+                .getInt(SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE, 300 * 1024)
+            // Leave room for the words and the message's own headers.
+            val bytes = Pictures.forSending(this, Uri.parse(uri), maxBytes = limit * 9 / 10 - text.length - 2048)
+            if (bytes == null) {
+                runOnUiThread { Toast.makeText(this, "That picture couldn't be made small enough to send.", Toast.LENGTH_LONG).show() }
+                return
+            }
+            listOf(bytes to "image/jpeg")
+        }.orEmpty()
+        Mms.send(this, to, text, images)
+    }
+
+    private fun retry(message: Message) {
+        val (notice, location) = MessageStore(this).waitingNotice(message.id) ?: return
+        Mms.download(this, notice, location, -1)
     }
 
     private fun time(millis: Long): String =
