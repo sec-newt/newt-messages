@@ -18,12 +18,12 @@ class SettingsStoreTest {
 
     @Test
     fun `by default reactions are quiet and nothing is spoken`() {
-        assertEquals(MessagesSettings(ReactionNotify.QUIET, SpeakMode.OFF, quietDuringDnd = true), store.settings())
+        assertEquals(MessagesSettings(ReactionNotify.QUIET, SpeakMode.OFF, quietDuringDnd = true, readMessage = false), store.settings())
     }
 
     @Test
     fun `settings and each chat's pin and mute are kept`() {
-        val changed = MessagesSettings(ReactionNotify.OFF, SpeakMode.HEADPHONES_ONLY, quietDuringDnd = false)
+        val changed = MessagesSettings(ReactionNotify.OFF, SpeakMode.HEADPHONES_ONLY, quietDuringDnd = false, readMessage = true)
         store.save(changed)
         assertEquals(changed, store.settings())
         store.setPinned(4, true)

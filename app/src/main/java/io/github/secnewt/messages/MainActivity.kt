@@ -170,6 +170,12 @@ class MainActivity : ComponentActivity() {
                 },
                 onBack = { showSettings = false },
                 onOpenVoiceSettings = { runCatching { startActivity(Intent("com.android.settings.TTS_SETTINGS")) } },
+                onTestVoice = {
+                    io.github.secnewt.messages.settings.Speaker.speak(
+                        this,
+                        io.github.secnewt.messages.settings.Speaking.text("Becca", "", null, if (current.readMessage) "Can you grab milk?" else null),
+                    )
+                },
             )
             return
         }

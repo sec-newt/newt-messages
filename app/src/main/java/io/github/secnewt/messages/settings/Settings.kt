@@ -21,6 +21,8 @@ data class MessagesSettings(
     val speak: SpeakMode = SpeakMode.OFF,
     /** Stay quiet during Do Not Disturb, even with headphones. */
     val quietDuringDnd: Boolean = true,
+    /** Read the message out after who it's from (never a sign-in code). */
+    val readMessage: Boolean = false,
 )
 
 /** The app's settings and each chat's own (pinned, muted), in its private storage. */
@@ -34,6 +36,7 @@ class SettingsStore(context: Context) {
             reactions = enumOr(prefs.getString("reactions", null), defaults.reactions),
             speak = enumOr(prefs.getString("speak", null), defaults.speak),
             quietDuringDnd = prefs.getBoolean("quiet_during_dnd", defaults.quietDuringDnd),
+            readMessage = prefs.getBoolean("read_message", defaults.readMessage),
         )
     }
 
@@ -42,6 +45,7 @@ class SettingsStore(context: Context) {
             .putString("reactions", settings.reactions.name)
             .putString("speak", settings.speak.name)
             .putBoolean("quiet_during_dnd", settings.quietDuringDnd)
+            .putBoolean("read_message", settings.readMessage)
             .apply()
     }
 
@@ -68,6 +72,17 @@ object Speaking {
         if (doNotDisturb && quietDuringDnd) return false
         if (headphones) return true
         return mode == SpeakMode.ALWAYS && ringerOn
+    }
+
+    /**
+     * What gets said, with the message read out when [body] is given: "Message from Becca:
+     * Can you grab milk?". A sign-in code is never read aloud, just called one.
+     */
+    fun text(name: String?, number: String, group: String?, body: String?): String {
+        val who = text(name, number, group)
+        val words = body?.trim()?.takeIf { it.isNotEmpty() } ?: return who
+        if (io.github.secnewt.messages.chats.Codes.find(words) != null) return "$who: a sign-in code"
+        return "$who: " + (if (words.length > 300) words.take(300) + "…" else words)
     }
 
     /** "Message from Becca", or the number read digit by digit. */
