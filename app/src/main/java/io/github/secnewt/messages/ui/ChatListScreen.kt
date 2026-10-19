@@ -22,6 +22,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Badge
@@ -37,7 +42,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
@@ -83,21 +87,46 @@ fun ChatListScreen(
     onOpen: (Chat) -> Unit,
     time: (Long) -> String,
     onOpenSettings: () -> Unit = {},
-    onDelete: ((Chat) -> Unit)? = null,
     onNewChat: (() -> Unit)? = null,
     /** Search: what's typed, and the messages that match it (from the message store). */
     query: String = "",
     onQuery: ((String) -> Unit)? = null,
     hits: List<io.github.secnewt.messages.chats.SearchHit> = emptyList(),
+    /** What to do with the chats picked by long-press. Null hides selecting. */
+    onBulk: ((BulkAction, List<Chat>) -> Unit)? = null,
 ) {
-    var deleting by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Chat?>(null) }
-    deleting?.let { chat ->
-        DeleteChatDialog(chat.title, onDelete = { deleting = null; onDelete?.invoke(chat) }, onCancel = { deleting = null })
+    // Chats picked by long-press; while any are picked, taps add or remove instead of opening.
+    var picked by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(listOf<Long>()) }
+    val pickedChats = chats.filter { it.threadId in picked }
+    val selecting = picked.isNotEmpty() && onBulk != null
+    var confirming by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<BulkAction?>(null) }
+    fun toggle(chat: Chat) {
+        picked = if (chat.threadId in picked) picked - chat.threadId else picked + chat.threadId
     }
+    fun run(action: BulkAction) {
+        onBulk?.invoke(action, pickedChats)
+        picked = emptyList()
+    }
+    if (selecting) androidx.activity.compose.BackHandler { picked = emptyList() }
+    confirming?.let { action ->
+        BulkConfirmDialog(action, pickedChats, onConfirm = { confirming = null; run(action) }, onCancel = { confirming = null })
+    }
+
+    val searching = query.isNotBlank()
+    // Swipe left and right between People, Groups, and Codes & alerts; the tabs follow.
+    val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = tab.ordinal) { ChatTab.entries.size }
+    androidx.compose.runtime.LaunchedEffect(tab) { if (pager.currentPage != tab.ordinal) pager.animateScrollToPage(tab.ordinal) }
+    androidx.compose.runtime.LaunchedEffect(pager) {
+        androidx.compose.runtime.snapshotFlow { pager.settledPage }.collect { page -> onTab(ChatTab.entries[page]) }
+    }
+
     Scaffold(
+        topBar = {
+            if (selecting) SelectionBar(pickedChats, onAction = { action -> if (action.confirm) confirming = action else run(action) }, onCancel = { picked = emptyList() })
+        },
         bottomBar = { ChatTabBar(chats, tab, onTab) },
         floatingActionButton = {
-            if (onNewChat != null) {
+            if (onNewChat != null && !selecting) {
                 androidx.compose.material3.ExtendedFloatingActionButton(
                     onClick = onNewChat,
                     modifier = Modifier.semantics { contentDescription = "New message" },
@@ -107,16 +136,10 @@ fun ChatListScreen(
             }
         },
     ) { padding ->
-        val searching = query.isNotBlank()
-        val shown = if (searching) emptyList() else ChatSorting.inTab(chats, tab)
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            // Room at the bottom so the New message button never covers the last chat.
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
-        ) {
-            item { TabHeader(if (searching) "Search" else tab.label, onOpenSettings) }
-            if (onQuery != null) {
-                item {
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
+                if (!selecting) TabHeader(if (searching) "Search" else tab.label, onOpenSettings)
+                if (onQuery != null && !selecting) {
                     androidx.compose.material3.OutlinedTextField(
                         value = query,
                         onValueChange = onQuery,
@@ -132,38 +155,134 @@ fun ChatListScreen(
                 }
             }
             if (searching) {
-                val people = io.github.secnewt.messages.chats.Search.chats(chats, query)
-                if (people.isEmpty() && hits.isEmpty()) {
-                    item { Text("Nothing matches “${query.trim()}”.", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 16.dp)) }
-                }
-                if (people.isNotEmpty()) item { io.github.secnewt.ui.SectionLabel("Chats") }
-                items(people, key = { "c" + it.threadId }) { chat ->
-                    ChatRow(chat, time(chat.lastTimeMillis), onLongPress = null) { onOpen(chat) }
-                    HorizontalDivider()
-                }
-                if (hits.isNotEmpty()) item { io.github.secnewt.ui.SectionLabel("Messages", modifier = Modifier.padding(top = 12.dp)) }
-                items(hits.mapNotNull { hit -> chats.firstOrNull { it.threadId == hit.threadId }?.let { hit to it } }) { (hit, chat) ->
-                    ChatRow(
-                        chat.copy(lastMessage = io.github.secnewt.messages.chats.Search.excerpt(hit.body, query), unread = 0, pinned = false),
-                        time(hit.timeMillis), onLongPress = null,
-                    ) { onOpen(chat) }
-                    HorizontalDivider()
+                SearchResults(chats, query, hits, time, onOpen)
+            } else {
+                androidx.compose.foundation.pager.HorizontalPager(state = pager, modifier = Modifier.weight(1f)) { page ->
+                    val pageTab = ChatTab.entries[page]
+                    val shown = ChatSorting.inTab(chats, pageTab)
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        // Room at the bottom so the New message button never covers the last chat.
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
+                    ) {
+                        if (shown.isEmpty()) {
+                            item {
+                                Text(
+                                    emptyText(pageTab),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 24.dp),
+                                )
+                            }
+                        }
+                        items(shown, key = { it.threadId }) { chat ->
+                            ChatRow(
+                                chat, time(chat.lastTimeMillis),
+                                picked = if (onBulk != null) chat.threadId in picked else null,
+                                onLongPress = if (onBulk != null) ({ toggle(chat) }) else null,
+                            ) { if (selecting) toggle(chat) else onOpen(chat) }
+                            HorizontalDivider()
+                        }
+                    }
                 }
             }
-            if (!searching && shown.isEmpty()) {
-                item {
-                    Text(
-                        emptyText(tab),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 24.dp),
-                    )
+        }
+    }
+}
+
+/** What can be done to several picked chats at once. */
+enum class BulkAction(val label: String, val confirm: Boolean) {
+    PIN("Pin", false), UNPIN("Unpin", false), MUTE("Mute", false), UNMUTE("Unmute", false),
+    MARK_READ("Mark read", false), BLOCK("Block", true), DELETE("Delete", true),
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun SelectionBar(picked: List<Chat>, onAction: (BulkAction) -> Unit, onCancel: () -> Unit) {
+    androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (picked.size == 1) "1 chat picked" else "${picked.size} chats picked",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
+                )
+                androidx.compose.material3.TextButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("Done", style = MaterialTheme.typography.titleMedium)
                 }
             }
-            items(shown, key = { it.threadId }) { chat ->
-                ChatRow(chat, time(chat.lastTimeMillis), onLongPress = if (onDelete != null) ({ deleting = chat }) else null) { onOpen(chat) }
-                HorizontalDivider()
+            // Wraps onto more lines at large text, so every action stays visible.
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                val allPinned = picked.all { it.pinned }
+                val allMuted = picked.all { it.muted }
+                listOf(
+                    if (allPinned) BulkAction.UNPIN else BulkAction.PIN,
+                    if (allMuted) BulkAction.UNMUTE else BulkAction.MUTE,
+                    BulkAction.MARK_READ, BulkAction.BLOCK, BulkAction.DELETE,
+                ).forEach { action ->
+                    androidx.compose.material3.OutlinedButton(onClick = { onAction(action) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(
+                            action.label,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = if (action.confirm) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun BulkConfirmDialog(action: BulkAction, picked: List<Chat>, onConfirm: () -> Unit, onCancel: () -> Unit) {
+    val people = picked.flatMap { it.people }.distinctBy { it.address }
+    val (title, body) = when (action) {
+        BulkAction.DELETE -> (if (picked.size == 1) "Delete this chat?" else "Delete ${picked.size} chats?") to
+            "Every message in them is deleted from this phone, for every messaging app. This can't be undone."
+        else -> (if (people.size == 1) "Block ${people.first().shownName}?" else "Block ${people.size} people?") to
+            "Android turns away texts and calls from them, in every app, including Newt Phone. " +
+            "You can unblock each one from a chat's details or Newt Phone's block list."
+    }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(title) },
+        text = { Text(body, style = MaterialTheme.typography.bodyLarge) },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onConfirm, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(action.label, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("Cancel", style = MaterialTheme.typography.titleMedium)
+            }
+        },
+    )
+}
+
+@Composable
+private fun SearchResults(chats: List<Chat>, query: String, hits: List<io.github.secnewt.messages.chats.SearchHit>, time: (Long) -> String, onOpen: (Chat) -> Unit) {
+    val people = io.github.secnewt.messages.chats.Search.chats(chats, query)
+    LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp)) {
+        if (people.isEmpty() && hits.isEmpty()) {
+            item { Text("Nothing matches “${query.trim()}”.", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 16.dp)) }
+        }
+        if (people.isNotEmpty()) item { io.github.secnewt.ui.SectionLabel("Chats") }
+        items(people, key = { "c" + it.threadId }) { chat ->
+            ChatRow(chat, time(chat.lastTimeMillis), picked = null, onLongPress = null) { onOpen(chat) }
+            HorizontalDivider()
+        }
+        if (hits.isNotEmpty()) item { io.github.secnewt.ui.SectionLabel("Messages", modifier = Modifier.padding(top = 12.dp)) }
+        items(hits.mapNotNull { hit -> chats.firstOrNull { it.threadId == hit.threadId }?.let { hit to it } }) { (hit, chat) ->
+            ChatRow(
+                chat.copy(lastMessage = io.github.secnewt.messages.chats.Search.excerpt(hit.body, query), unread = 0, pinned = false),
+                time(hit.timeMillis), picked = null, onLongPress = null,
+            ) { onOpen(chat) }
+            HorizontalDivider()
         }
     }
 }
@@ -174,47 +293,74 @@ private fun emptyText(tab: ChatTab) = when (tab) {
     ChatTab.CODES -> "Sign-in codes, delivery notices and other automatic texts land here."
 }
 
+/**
+ * One chat in the list. Unread chats are hard to miss: a thick bar in the accent color down
+ * the left, a tinted background, bold words, and the count in a big pill. [picked] is null
+ * when selecting isn't offered, otherwise whether this chat is picked.
+ */
 @Composable
-private fun ChatRow(chat: Chat, time: String, onLongPress: (() -> Unit)?, onClick: () -> Unit) {
+private fun ChatRow(chat: Chat, time: String, picked: Boolean?, onLongPress: (() -> Unit)?, onClick: () -> Unit) {
     val unread = chat.unread > 0
     val spoken = buildString {
+        if (picked == true) append("Picked. ")
         append(chat.title)
         if (chat.pinned) append(", pinned")
+        if (chat.muted) append(", muted")
         if (unread) append(", ${chat.unread} unread")
         append(". ${chat.lastMessage}. $time")
     }
+    val accent = MaterialTheme.colorScheme.primary
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 72.dp)
+            .background(
+                when {
+                    picked == true -> MaterialTheme.colorScheme.secondaryContainer
+                    unread -> MaterialTheme.colorScheme.surfaceContainerHigh
+                    else -> Color.Transparent
+                },
+            )
             .combinedClickable(
                 role = Role.Button,
                 onClick = onClick,
                 onLongClick = onLongPress,
-                onLongClickLabel = if (onLongPress != null) "Delete chat" else null,
+                onLongClickLabel = if (onLongPress != null) "Pick" else null,
             )
             .clearAndSetSemantics {
                 contentDescription = spoken
                 onClick(label = "Open chat") { onClick(); true }
-                // Screen readers get Delete as an action, since a long press is hard to find.
-                if (onLongPress != null) customActions = listOf(CustomAccessibilityAction("Delete chat") { onLongPress(); true })
+                // Screen readers get picking as an action, since a long press is hard to find.
+                if (onLongPress != null) customActions = listOf(CustomAccessibilityAction(if (picked == true) "Unpick" else "Pick") { onLongPress(); true })
             }
-            .padding(vertical = 10.dp),
+            .padding(end = 4.dp),
     ) {
-        Initial(chat.title)
-        Column(Modifier.weight(1f)) {
+        Box(Modifier.width(6.dp).heightIn(min = 72.dp).background(if (unread) accent else Color.Transparent))
+        if (picked == true) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp).background(accent, CircleShape)) {
+                Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
+            }
+        } else {
+            Initial(chat.title)
+        }
+        Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    (if (chat.pinned) "📌 " else "") + chat.title,
+                    (if (chat.pinned) "📌 " else "") + (if (chat.muted) "🔕 " else "") + chat.title,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = if (unread) FontWeight.Bold else FontWeight.Medium,
+                    fontWeight = if (unread) FontWeight.ExtraBold else FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                Text(time, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    time,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (unread) FontWeight.Bold else FontWeight.Normal,
+                    color = if (unread) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -227,8 +373,16 @@ private fun ChatRow(chat: Chat, time: String, onLongPress: (() -> Unit)?, onClic
                     modifier = Modifier.weight(1f),
                 )
                 if (unread) {
-                    Badge(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary) {
-                        Text(chat.unread.toString(), style = MaterialTheme.typography.titleSmall)
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .padding(start = 8.dp)
+                            .heightIn(min = 32.dp)
+                            .widthIn(min = 32.dp)
+                            .background(accent, androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+                            .padding(horizontal = 10.dp),
+                    ) {
+                        Text(chat.unread.toString(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
                     }
                 }
             }

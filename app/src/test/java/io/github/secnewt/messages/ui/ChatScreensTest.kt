@@ -5,6 +5,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.performTextInput
@@ -308,6 +310,47 @@ class ChatScreensTest {
         composeRule.onNodeWithText("Block Sam?").assertIsDisplayed()
         composeRule.onNodeWithText("Block").performClick()
         assertEquals("+12145550122" to true, blocked)
+    }
+
+    @Test
+    fun longPressPicksChatsForBulkActions() {
+        var did: Pair<BulkAction, List<Long>>? = null
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatListScreen(
+                    SampleChats.chats, ChatTab.PEOPLE, onTab = {}, onOpen = {}, time = SampleChats.time,
+                    onBulk = { action, picked -> did = action to picked.map { it.threadId } },
+                )
+            }
+        }
+        composeRule.onNodeWithContentDescription("Becca, pinned, 2 unread", substring = true).performTouchInput { longClick() }
+        composeRule.onNodeWithText("1 chat picked").assertIsDisplayed()
+        // While picking, a tap adds another chat instead of opening it.
+        composeRule.onNodeWithContentDescription("Mom.", substring = true).performClick()
+        composeRule.onNodeWithText("2 chats picked").assertIsDisplayed()
+        composeRule.onNodeWithText("Mute").performClick()
+        assertEquals(BulkAction.MUTE to listOf(1L, 2L), did)
+    }
+
+    @Test
+    fun deletingPickedChatsAsksFirst() {
+        var did: BulkAction? = null
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatListScreen(SampleChats.chats, ChatTab.PEOPLE, onTab = {}, onOpen = {}, time = SampleChats.time, onBulk = { a, _ -> did = a })
+            }
+        }
+        composeRule.onNodeWithContentDescription("Mom.", substring = true).performTouchInput { longClick() }
+        composeRule.onNodeWithText("Delete").performClick()
+        assertEquals(null, did)
+        composeRule.onNodeWithText("Delete this chat?").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Delete").onLast().performClick()
+        assertEquals(BulkAction.DELETE, did)
+    }
+
+    @Test
+    fun pickingLargeText() = composeRule.newtScreenshot("chats-picking-200pct", dark = false, fontScale = 2f) {
+        ChatListScreen(SampleChats.chats, ChatTab.PEOPLE, onTab = {}, onOpen = {}, time = SampleChats.time, onBulk = { _, _ -> })
     }
 
     @Test

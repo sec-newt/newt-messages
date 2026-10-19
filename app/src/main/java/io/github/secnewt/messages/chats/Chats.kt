@@ -72,9 +72,11 @@ object ChatSorting {
         return digits.length in 3..8 && trimmed.none { it == '+' }
     }
 
-    /** One tab's chats: pinned first, then newest first. */
+    /** One tab's chats: pinned first, then unread ones, then newest first. */
     fun inTab(chats: List<Chat>, tab: ChatTab): List<Chat> =
-        chats.filter { tabFor(it) == tab }.sortedWith(compareByDescending<Chat> { it.pinned }.thenByDescending { it.lastTimeMillis })
+        chats.filter { tabFor(it) == tab }.sortedWith(
+            compareByDescending<Chat> { it.pinned }.thenByDescending { it.unread > 0 }.thenByDescending { it.lastTimeMillis },
+        )
 
     /** Every group with this person in it, for "search by member". */
     fun groupsWith(chats: List<Chat>, query: String): List<Chat> {

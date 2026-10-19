@@ -183,8 +183,8 @@ class MainActivity : ComponentActivity() {
             }
             ChatListScreen(
                 chats, tab, onTab = { tab = it }, onOpen = { openThread = it.threadId }, time = ::time,
-                onDelete = { chat -> Thread { delete(chat.threadId) }.start() },
                 onNewChat = { newChat = true },
+                onBulk = { action, picked -> Thread { bulk(action, picked) }.start() },
                 onOpenSettings = { showSettings = true },
                 query = query,
                 onQuery = { query = it },
@@ -347,6 +347,29 @@ class MainActivity : ComponentActivity() {
         runOnUiThread {
             Toast.makeText(this, if (where != null) "Saved to $where" else "Couldn't save it", Toast.LENGTH_LONG).show()
         }
+    }
+
+    /** Pin, mute, mark read, block or delete several chats at once (from the list). */
+    private fun bulk(action: io.github.secnewt.messages.ui.BulkAction, picked: List<Chat>) {
+        val settings = io.github.secnewt.messages.settings.SettingsStore(this)
+        val store = MessageStore(this)
+        when (action) {
+            io.github.secnewt.messages.ui.BulkAction.PIN -> picked.forEach { settings.setPinned(it.threadId, true) }
+            io.github.secnewt.messages.ui.BulkAction.UNPIN -> picked.forEach { settings.setPinned(it.threadId, false) }
+            io.github.secnewt.messages.ui.BulkAction.MUTE -> picked.forEach { settings.setMuted(it.threadId, true) }
+            io.github.secnewt.messages.ui.BulkAction.UNMUTE -> picked.forEach { settings.setMuted(it.threadId, false) }
+            io.github.secnewt.messages.ui.BulkAction.MARK_READ -> picked.forEach {
+                store.markRead(it.threadId)
+                Notifier(this).cancel(it.threadId)
+            }
+            io.github.secnewt.messages.ui.BulkAction.BLOCK -> {
+                val blocking = io.github.secnewt.messages.chats.Blocking(this)
+                val failed = picked.flatMap { it.people }.distinctBy { it.address }.count { !blocking.block(it.address) }
+                if (failed > 0) runOnUiThread { Toast.makeText(this, "Android didn't allow blocking $failed of them.", Toast.LENGTH_LONG).show() }
+            }
+            io.github.secnewt.messages.ui.BulkAction.DELETE -> picked.forEach { delete(it.threadId) }
+        }
+        runOnUiThread { version++ }
     }
 
     private fun delete(threadId: Long) {
