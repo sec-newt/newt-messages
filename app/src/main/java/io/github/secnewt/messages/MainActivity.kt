@@ -85,7 +85,7 @@ class MainActivity : ComponentActivity() {
 
     private fun askForPermissions() {
         if (!isDefault) return
-        val wanted = listOf(Manifest.permission.READ_CONTACTS, Manifest.permission.POST_NOTIFICATIONS)
+        val wanted = listOf(Manifest.permission.READ_CONTACTS, Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.READ_PHONE_NUMBERS)
             .filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
         if (wanted.isNotEmpty()) requestPermissions(wanted.toTypedArray(), 1)
     }

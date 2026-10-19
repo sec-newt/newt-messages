@@ -12,6 +12,8 @@ Changes from that copy:
 - Klinker's logger replaced with `android.util.Log`.
 - `SendReq.prepareFromAddress` no longer reads the phone's own number; the carrier fills it in.
 - `PduPersister` saves the subscription id whenever it's real (the library's checker is gone).
+- `PduPersister.loadRecipients` reads my own number only with READ_PHONE_NUMBERS granted, and
+  never crashes without it (the original would throw on the first group message).
 - DRM (forward-locked) conversion removed: it used a hidden Android class, and copy-protected
   MMS parts are a flip-phone-era feature. Such parts are saved as they arrive.
 

@@ -1467,7 +1467,16 @@ public class PduPersister {
         if (excludeMyNumber && array.length == 1 && addressType == PduHeaders.TO) {
             return;
         }
-        String myNumber = excludeMyNumber ? mTelephonyManager.getLine1Number() : null;
+        // Newt Messages: only read my own number if allowed; otherwise nobody is left out.
+        String myNumber = null;
+        if (excludeMyNumber && mContext.checkSelfPermission(android.Manifest.permission.READ_PHONE_NUMBERS)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            try {
+                myNumber = mTelephonyManager.getLine1Number();
+            } catch (SecurityException e) {
+                myNumber = null;
+            }
+        }
         for (EncodedStringValue v : array) {
             if (v != null) {
                 String number = v.getString();
