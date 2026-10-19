@@ -42,6 +42,14 @@ adb shell dumpsys notification --noredact > notifications.txt
 grep -q "pkg=$pkg.*messages" notifications.txt || grep -q "$pkg" notifications.txt || fail "No notification for the incoming text."
 adb logcat -d -s NewtSpeak:I > speak.log
 grep -q "Announcing a message" speak.log || fail "\"Say who's messaging\" is on, but the text wasn't announced."
+# And a voice must actually answer (Android hides the voice from apps that don't declare it).
+if adb shell cmd package query-services -a android.intent.action.TTS_SERVICE 2>/dev/null | grep -q "packageName"; then
+  for _ in $(seq 10); do adb logcat -d -s NewtSpeak:I > speak.log; grep -q "Voice ready" speak.log && break; sleep 1; done
+  grep -q "Voice ready" speak.log || { cat speak.log; fail "The phone has a text-to-speech voice, but the app couldn't reach it."; }
+  echo "A voice answered."
+else
+  echo "::warning::This emulator has no text-to-speech voice, so only the announce trigger was checked."
+fi
 echo "Incoming text stored and notified."
 echo "The text was announced."
 

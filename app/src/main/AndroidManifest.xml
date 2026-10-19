@@ -14,6 +14,14 @@
 
     <uses-feature android:name="android.hardware.telephony" android:required="true" />
 
+    <queries>
+        <!-- Lets "Say who's messaging" find the phone's text-to-speech voice. Without this,
+             Android hides the voice from the app and nothing is ever spoken. No permission. -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <!-- Lets other apps signed with the Newt key (Newt Home) read how many messages are unread:
          only the number. "signature" means Android grants it to no other app, and nobody is asked. -->
     <permission

@@ -44,21 +44,28 @@ object Speaker {
         speak(app, text)
     }
 
-    /** Speaks [text] now, whatever the settings (used by the settings screen's Test button too). */
-    fun speak(context: Context, text: String) {
+    /**
+     * Speaks [text] now, whatever the settings (used by the settings screen's Test button too).
+     * [done] is told on the main thread whether a voice was found and spoke.
+     */
+    fun speak(context: Context, text: String, done: (Boolean) -> Unit = {}) {
         val app = context.applicationContext
         main.post {
             stop()
             var started: TextToSpeech? = null
-            val give = Runnable { if (engine === started) stop() }
+            var told = false
+            val tell = { ok: Boolean -> if (!told) { told = true; done(ok) } }
+            val give = Runnable { if (engine === started) { stop(); tell(false) } }
             started = TextToSpeech(app) { status ->
                 val voice = started ?: return@TextToSpeech
                 if (engine !== voice) return@TextToSpeech
                 if (status != TextToSpeech.SUCCESS) {
                     Log.w(TAG, "No text-to-speech voice is available")
                     stop()
+                    tell(false)
                     return@TextToSpeech
                 }
+                Log.i(TAG, "Voice ready")
                 // The notification stream, so it follows the notification volume.
                 voice.setAudioAttributes(
                     AudioAttributes.Builder()
@@ -69,18 +76,22 @@ object Speaker {
                 voice.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(id: String?) = Unit
                     override fun onDone(id: String?) {
-                        main.post { if (engine === voice) stop() }
+                        Log.i(TAG, "Spoke")
+                        main.post { tell(true); if (engine === voice) stop() }
                     }
                     @Deprecated("Replaced by onError(String, Int)")
                     override fun onError(id: String?) {
-                        main.post { if (engine === voice) stop() }
+                        main.post { tell(false); if (engine === voice) stop() }
                     }
                     override fun onError(id: String?, errorCode: Int) {
                         Log.w(TAG, "The voice couldn't speak (error $errorCode)")
-                        main.post { if (engine === voice) stop() }
+                        main.post { tell(false); if (engine === voice) stop() }
                     }
                 })
-                if (voice.speak(text, TextToSpeech.QUEUE_FLUSH, null, "message") != TextToSpeech.SUCCESS) stop()
+                if (voice.speak(text, TextToSpeech.QUEUE_FLUSH, null, "message") != TextToSpeech.SUCCESS) {
+                    stop()
+                    tell(false)
+                }
             }
             engine = started
             // Never hold on to the voice if it never answers.
