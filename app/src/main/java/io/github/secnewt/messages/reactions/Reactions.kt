@@ -95,6 +95,24 @@ object Reactions {
         }
     }
 
+    /** The emoji offered when reacting, iPhone's six first so iPhones show them as their own. */
+    val CHOICES = listOf("❤️", "👍", "👎", "😂", "‼️", "❓", "🙏")
+
+    /** Longest quote sent back; longer messages are cut with "…", which both sides understand. */
+    const val QUOTE_LIMIT = 120
+
+    /**
+     * The text to send to react to [message] with [emoji], or take it back if I already had.
+     * Null when the message has no words to quote (a picture on its own).
+     */
+    fun reply(message: io.github.secnewt.messages.chats.Message, emoji: String): String? {
+        val body = message.body.trim()
+        if (body.isEmpty() || message.waiting) return null
+        val quote = if (body.length <= QUOTE_LIMIT) body else body.take(QUOTE_LIMIT - 1).trimEnd() + "…"
+        val mine = message.reactions.any { it.from == null && it.emoji == emoji }
+        return iphoneText(emoji, quote, removed = mine)
+    }
+
     private val IPHONE_WORDS = mapOf(
         "❤️" to ("Loved" to "a heart"),
         "👍" to ("Liked" to "a like"),

@@ -41,6 +41,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.secnewt.messages.chats.Chat
@@ -75,7 +78,19 @@ fun ChatScreen(
     onSave: ((String, String, String) -> Unit)? = null,
     /** Who's in the chat, renaming, adding or removing people, deleting. */
     onDetails: (() -> Unit)? = null,
+    /** React to a message with an emoji (or take it back). */
+    onReact: ((Message, String) -> Unit)? = null,
+    onDeleteMessage: ((Message) -> Unit)? = null,
 ) {
+    var acting by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Message?>(null) }
+    acting?.let { message ->
+        MessageActionsSheet(
+            message,
+            onReact = onReact?.let { react -> { emoji: String -> acting = null; react(message, emoji) } },
+            onDelete = onDeleteMessage?.let { delete -> { acting = null; delete(message) } },
+            onDismiss = { acting = null },
+        )
+    }
     var viewing by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<String?>(null) }
     viewing?.let { uri ->
         PictureViewer(uri, onClose = { viewing = null }, onSave = onSave?.let { save -> { save(uri, "picture", "image/jpeg") } })
@@ -117,6 +132,7 @@ fun ChatScreen(
                 Bubble(
                     message, showName = chat.isGroup, time = time(message.timeMillis),
                     onDownload = { onDownload(message) }, onOpenPicture = { viewing = it }, onSave = onSave,
+                    onOptions = if (onReact != null || onDeleteMessage != null) ({ acting = message }) else null,
                 )
             }
         }
@@ -131,7 +147,10 @@ private fun Bubble(
     onDownload: () -> Unit,
     onOpenPicture: (String) -> Unit,
     onSave: ((String, String, String) -> Unit)?,
+    onOptions: (() -> Unit)? = null,
 ) {
+    // Long-press for react / copy / delete; screen readers get it as an action instead.
+    val options = onOptions?.let { open -> listOf(androidx.compose.ui.semantics.CustomAccessibilityAction("Message options") { open(); true }) }
     val who = message.from?.shownName
     val color = if (who == null) MaterialTheme.colorScheme.primary else personOutline(who)
     val reactions = message.reactions.joinToString(", ") { r -> "${r.emoji} from ${r.from?.shownName ?: "you"}" }
@@ -144,9 +163,12 @@ private fun Bubble(
     Row(
         modifier = Modifier.fillMaxWidth().then(
             if (message.waiting || message.images.isNotEmpty() || message.files.isNotEmpty() || Links.find(message.body).isNotEmpty()) {
-                Modifier.semantics(mergeDescendants = false) {}
+                Modifier.semantics(mergeDescendants = false) { if (options != null) customActions = options }
             } else {
-                Modifier.clearAndSetSemantics { contentDescription = spoken }
+                Modifier.clearAndSetSemantics {
+                    contentDescription = spoken
+                    if (options != null) customActions = options
+                }
             },
         ),
         horizontalArrangement = if (message.mine) Arrangement.End else Arrangement.Start,
@@ -170,6 +192,11 @@ private fun Bubble(
                 }
             }
             Surface(
+                modifier = if (onOptions != null) {
+                    Modifier.pointerInput(onOptions) { detectTapGestures(onLongPress = { onOptions() }) }
+                } else {
+                    Modifier
+                },
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 border = BorderStroke(2.dp, color),
@@ -299,6 +326,64 @@ private fun ComposeBar(draft: String, onDraftChange: (String) -> Unit, onSend: (
         )
         FilledIconButton(onClick = onSend, enabled = canSend, modifier = Modifier.size(56.dp)) {
             Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+        }
+    }
+}
+
+/** What you can do with one message: react, copy its words, or delete it. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun MessageActionsSheet(
+    message: Message,
+    onReact: ((String) -> Unit)?,
+    onDelete: (() -> Unit)?,
+    onDismiss: () -> Unit,
+) {
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    var confirmDelete by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (onReact != null && message.body.isNotBlank() && !message.waiting) {
+                Text("React", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                    io.github.secnewt.messages.reactions.Reactions.CHOICES.forEach { emoji ->
+                        val mine = message.reactions.any { it.from == null && it.emoji == emoji }
+                        androidx.compose.material3.IconButton(
+                            onClick = { onReact(emoji) },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .then(if (mine) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp)) else Modifier)
+                                .semantics { contentDescription = (if (mine) "Take back " else "React ") + emoji },
+                        ) { Text(emoji, style = MaterialTheme.typography.headlineSmall) }
+                    }
+                }
+            }
+            if (message.body.isNotBlank() && !message.waiting) {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        clipboard.setText(androidx.compose.ui.text.AnnotatedString(message.body))
+                        onDismiss()
+                    },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                ) { Text("Copy text", style = MaterialTheme.typography.titleMedium) }
+            }
+            if (onDelete != null) {
+                if (!confirmDelete) {
+                    androidx.compose.material3.TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+                        Text("Delete this message", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
+                    }
+                } else {
+                    Text("Delete it from this phone? This can't be undone.", style = MaterialTheme.typography.bodyLarge)
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        androidx.compose.material3.Button(onClick = onDelete, modifier = Modifier.heightIn(min = 56.dp)) {
+                            Text("Delete", style = MaterialTheme.typography.titleMedium)
+                        }
+                        androidx.compose.material3.OutlinedButton(onClick = { confirmDelete = false }, modifier = Modifier.heightIn(min = 56.dp)) {
+                            Text("Keep it", style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+                }
+            }
         }
     }
 }

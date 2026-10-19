@@ -233,6 +233,11 @@ class MainActivity : ComponentActivity() {
             onRemoveAttachment = { picture = null },
             onSave = { uri, name, type -> Thread { save(uri, name, type) }.start() },
             onDetails = { showDetails = true },
+            onReact = { message, emoji ->
+                // A reaction is an ordinary text in iPhone wording; it folds onto the message here too.
+                io.github.secnewt.messages.reactions.Reactions.reply(message, emoji)?.let { text -> Thread { send(chat, text, null) }.start() }
+            },
+            onDeleteMessage = { message -> Thread { MessageStore(this).deleteMessage(message.id) }.start() },
         )
     }
 
