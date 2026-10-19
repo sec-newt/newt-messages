@@ -5,6 +5,9 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import io.github.secnewt.messages.chats.Chat
@@ -87,19 +90,46 @@ class ChatScreensTest {
     @Test
     fun deletingAChatAsksFirst() {
         var deleted = false
-        composeRule.setContent {
-            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
-                ChatScreen(
-                    SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
-                    time = SampleChats.time, onDelete = { deleted = true },
-                )
-            }
-        }
-        composeRule.onNodeWithContentDescription("Delete this chat").performClick()
+        composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { Details(onDelete = { deleted = true }) } }
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Delete this chat"))
+        composeRule.onNodeWithText("Delete this chat").performClick()
         composeRule.onNodeWithText("Delete this chat?").assertIsDisplayed()
         assertEquals(false, deleted)
         composeRule.onNodeWithText("Delete").performClick()
         assertEquals(true, deleted)
+    }
+
+    @androidx.compose.runtime.Composable
+    private fun Details(
+        chat: Chat = SampleChats.family.copy(people = SampleChats.family.people + io.github.secnewt.messages.chats.Person("+14695550199")),
+        onDelete: () -> Unit = {},
+        onNewMembers: (List<String>) -> Unit = {},
+        onAddToContacts: (io.github.secnewt.messages.chats.Person) -> Unit = {},
+    ) = ChatDetailsScreen(
+        chat, onBack = {}, onText = {}, onCall = {}, onAddToContacts = onAddToContacts, onRename = {},
+        onNewMembers = onNewMembers, onPickContact = {}, onDelete = onDelete,
+    )
+
+    @Test fun groupDetailsDark() = composeRule.newtScreenshot("group-details-dark", dark = true) { Details() }
+    @Test fun groupDetailsLargeText() = composeRule.newtScreenshot("group-details-200pct", dark = false, fontScale = 2f) { Details() }
+
+    @Test
+    fun removingSomeoneStartsANewGroup() {
+        var members: List<String>? = null
+        composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { Details(onNewMembers = { members = it }) } }
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Remove Sam from the group"))
+        composeRule.onNodeWithText("Remove Sam from the group").performClick()
+        composeRule.onNodeWithText("Start new group").performClick()
+        assertEquals(listOf("+19725550111", "+19725550144", "+14695550199"), members)
+    }
+
+    @Test
+    fun unknownNumbersCanBeAddedToContacts() {
+        var added: String? = null
+        composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { Details(onAddToContacts = { added = it.address }) } }
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Add to contacts"))
+        composeRule.onNodeWithText("Add to contacts").performClick()
+        assertEquals("+14695550199", added)
     }
 
     @Test
@@ -107,26 +137,24 @@ class ChatScreensTest {
         ChatScreen(
             SampleChats.chats[1],
             listOf(io.github.secnewt.messages.chats.Message(1, "Service times are on firstbaptist.church/visit or email office@church.org", 9 * SampleChats.HOUR, SampleChats.mom)),
-            draft = "", onDraftChange = {}, onSend = {}, onBack = {}, time = SampleChats.time, onDelete = {},
+            draft = "", onDraftChange = {}, onSend = {}, onBack = {}, time = SampleChats.time, onDetails = {},
         )
     }
 
     @Test
     fun savingAFileAndRenamingAGroup() {
         var saved: String? = null
-        var renamed: String? = null
         composeRule.setContent {
             io.github.secnewt.ui.NewtTheme(darkTheme = true) {
                 ChatScreen(
                     SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
-                    time = SampleChats.time, onSave = { _, name, _ -> saved = name }, onRename = { renamed = it },
+                    time = SampleChats.time, onSave = { _, name, _ -> saved = name }, onDetails = {},
                 )
             }
         }
         composeRule.onNodeWithText("Save").performClick()
         assertEquals("bulletin.pdf", saved)
-        composeRule.onNodeWithContentDescription("Rename this group").assertIsDisplayed()
-        assertEquals(null, renamed)
+        composeRule.onNodeWithContentDescription("Group details").assertIsDisplayed()
     }
 
     // The rename dialog is tested on the emulator (scripts/emulator-sms-test.sh): under
@@ -136,7 +164,7 @@ class ChatScreensTest {
     fun groupWithAFileDark() = composeRule.newtScreenshot("chat-group-file-dark", dark = true) {
         ChatScreen(
             SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
-            time = SampleChats.time, onSave = { _, _, _ -> }, onRename = {}, onDelete = {},
+            time = SampleChats.time, onSave = { _, _, _ -> }, onDetails = {},
         )
     }
 

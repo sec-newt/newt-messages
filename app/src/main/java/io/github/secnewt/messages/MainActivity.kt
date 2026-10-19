@@ -37,7 +37,9 @@ import android.widget.Toast
 import io.github.secnewt.messages.notify.Notifier
 import io.github.secnewt.messages.sms.MessageStore
 import io.github.secnewt.messages.sms.SmsSender
+import io.github.secnewt.messages.ui.ChatDetailsScreen
 import io.github.secnewt.messages.ui.ChatListScreen
+import android.provider.ContactsContract
 import io.github.secnewt.messages.ui.ChatScreen
 import io.github.secnewt.messages.ui.WelcomeScreen
 import io.github.secnewt.ui.NewtTheme
@@ -51,6 +53,16 @@ class MainActivity : ComponentActivity() {
     private var version by mutableIntStateOf(0)
     private var openThread by mutableStateOf<Long?>(null)
     private var isDefault by mutableStateOf(false)
+    private var showDetails by mutableStateOf(false)
+    // Where a number chosen from contacts goes (the Add someone dialog).
+    private var picked: ((String) -> Unit)? = null
+    private val pickNumber = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val uri = result.data?.data ?: return@registerForActivityResult
+        val number = contentResolver.query(uri, arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER), null, null, null)
+            ?.use { if (it.moveToFirst()) it.getString(0) else null }
+        if (number != null) picked?.invoke(number)
+        picked = null
+    }
     private var startDraft by mutableStateOf("")
     // Who an "sms:" link was for, so a brand-new chat (no messages yet) can still open.
     private var startPeople by mutableStateOf<List<String>>(emptyList())
@@ -155,6 +167,36 @@ class MainActivity : ComponentActivity() {
                 Notifier(this@MainActivity).cancel(thread)
             }
         }
+        if (showDetails) {
+            BackHandler { showDetails = false }
+            ChatDetailsScreen(
+                chat,
+                onBack = { showDetails = false },
+                onText = { person -> open(listOf(person.address)) },
+                onCall = { person -> startActivity(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", person.address, null))) },
+                onAddToContacts = { person ->
+                    startActivity(
+                        Intent(ContactsContract.Intents.Insert.ACTION).setType(ContactsContract.RawContacts.CONTENT_TYPE)
+                            .putExtra(ContactsContract.Intents.Insert.PHONE, person.address),
+                    )
+                },
+                onRename = { name ->
+                    GroupNames(this).rename(thread, name)
+                    version++
+                },
+                onNewMembers = { numbers -> open(numbers, carryName = chat.name) },
+                onPickContact = { done ->
+                    picked = done
+                    pickNumber.launch(Intent(Intent.ACTION_PICK, ContactsContract.CommonDataKinds.Phone.CONTENT_URI))
+                },
+                onDelete = {
+                    showDetails = false
+                    openThread = null
+                    Thread { delete(thread) }.start()
+                },
+            )
+            return
+        }
         BackHandler { openThread = null }
         ChatScreen(
             chat, messages, draft,
@@ -175,15 +217,8 @@ class MainActivity : ComponentActivity() {
             onAttach = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
             attached = picture?.let { "1 picture" },
             onRemoveAttachment = { picture = null },
-            onDelete = {
-                openThread = null
-                Thread { delete(thread) }.start()
-            },
             onSave = { uri, name, type -> Thread { save(uri, name, type) }.start() },
-            onRename = if (chat.isGroup) ({ name ->
-                GroupNames(this).rename(thread, name)
-                version++
-            }) else null,
+            onDetails = { showDetails = true },
         )
     }
 
@@ -206,6 +241,20 @@ class MainActivity : ComponentActivity() {
             listOf(bytes to "image/jpeg")
         }.orEmpty()
         Mms.send(this, to, text, images)
+    }
+
+    /** Opens the chat with exactly these people, starting it if it's new. */
+    private fun open(numbers: List<String>, carryName: String? = null) {
+        val people = numbers.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (people.isEmpty()) return
+        val thread = Telephony.Threads.getOrCreateThreadId(this, people.toSet())
+        // A group that changed members keeps its name, unless the new group already has one.
+        if (carryName != null && people.size > 1 && GroupNames(this).name(thread) == null) GroupNames(this).rename(thread, carryName)
+        startPeople = people
+        startDraft = ""
+        showDetails = false
+        openThread = thread
+        version++
     }
 
     private fun save(uri: String, name: String, type: String) {
