@@ -41,7 +41,7 @@ grep -q "reacted" notifications.txt || fail "No reaction notification."
 echo "Reaction recognized, matched, and notified as a reaction."
 
 # The unread count for Newt Home is locked to Newt-signed apps: an app without the key (the
-# shell) must be turned away. (What it counts is a unit test: UnreadCountTest.)
+# shell) must be turned away. (It counts exactly what the chat list shows: MessageStore.unreadCount.)
 denied="$(adb shell content query --uri "content://$pkg.unread/count" 2>&1 || true)"
 echo "$denied" | grep -qi "permission\|denial\|security" || fail "An app without the Newt key could read the unread count: $denied"
 echo "The unread count is locked to Newt-signed apps."
