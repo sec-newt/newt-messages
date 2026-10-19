@@ -112,6 +112,35 @@ class ChatScreensTest {
     }
 
     @Test
+    fun savingAFileAndRenamingAGroup() {
+        var saved: String? = null
+        var renamed: String? = null
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatScreen(
+                    SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
+                    time = SampleChats.time, onSave = { _, name, _ -> saved = name }, onRename = { renamed = it },
+                )
+            }
+        }
+        composeRule.onNodeWithText("Save").performClick()
+        assertEquals("bulletin.pdf", saved)
+        composeRule.onNodeWithContentDescription("Rename this group").assertIsDisplayed()
+        assertEquals(null, renamed)
+    }
+
+    // The rename dialog is tested on the emulator (scripts/emulator-sms-test.sh): under
+    // Robolectric a text field inside a dialog never lets Compose go idle.
+
+    @Test
+    fun groupWithAFileDark() = composeRule.newtScreenshot("chat-group-file-dark", dark = true) {
+        ChatScreen(
+            SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
+            time = SampleChats.time, onSave = { _, _, _ -> }, onRename = {}, onDelete = {},
+        )
+    }
+
+    @Test
     fun reactionsAreReadOutWithTheMessage() {
         composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { family() } }
         composeRule.onNodeWithContentDescription("Reactions: ❤️ from Mom, ❤️ from Becca, 😂 from Sam", substring = true).assertIsDisplayed()

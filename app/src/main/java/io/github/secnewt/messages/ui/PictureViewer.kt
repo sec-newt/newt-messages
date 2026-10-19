@@ -33,9 +33,9 @@ import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** A picture full screen. Pinch to zoom, drag to look around; Close or back to leave. */
+/** A picture full screen. Pinch to zoom, drag to look around; Save keeps a copy; Close or back to leave. */
 @Composable
-fun PictureViewer(uri: String, onClose: () -> Unit) {
+fun PictureViewer(uri: String, onClose: () -> Unit, onSave: (() -> Unit)? = null) {
     val context = LocalContext.current
     val image by produceState<ImageBitmap?>(null, uri) {
         value = withContext(Dispatchers.IO) { Pictures.thumbnail(context, uri, maxPx = 3000) }
@@ -67,8 +67,18 @@ fun PictureViewer(uri: String, onClose: () -> Unit) {
             } else {
                 Text("Loading…", color = Color.White, style = MaterialTheme.typography.titleMedium, modifier = Modifier.align(Alignment.Center))
             }
-            Button(onClick = onClose, modifier = Modifier.align(Alignment.TopEnd).safeDrawingPadding().padding(16.dp).heightIn(min = 56.dp)) {
-                Text("Close", style = MaterialTheme.typography.titleMedium)
+            androidx.compose.foundation.layout.Row(
+                Modifier.align(Alignment.TopEnd).safeDrawingPadding().padding(16.dp),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+            ) {
+                if (onSave != null) {
+                    Button(onClick = onSave, modifier = Modifier.heightIn(min = 56.dp)) {
+                        Text("Save", style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+                Button(onClick = onClose, modifier = Modifier.heightIn(min = 56.dp)) {
+                    Text("Close", style = MaterialTheme.typography.titleMedium)
+                }
             }
         }
     }
@@ -89,6 +99,43 @@ fun DeleteChatDialog(title: String, onDelete: () -> Unit, onCancel: () -> Unit) 
         confirmButton = {
             androidx.compose.material3.TextButton(onClick = onDelete, modifier = Modifier.heightIn(min = 48.dp)) {
                 Text("Delete", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("Cancel", style = MaterialTheme.typography.titleMedium)
+            }
+        },
+    )
+}
+
+/** Rename a group. A blank name goes back to listing the people. */
+@Composable
+fun RenameGroupDialog(current: String, onRename: (String) -> Unit, onCancel: () -> Unit) {
+    var name by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(current) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("Name this group") },
+        text = {
+            androidx.compose.foundation.layout.Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it.take(io.github.secnewt.messages.chats.GroupNames.MAX_LENGTH) },
+                    label = { Text("Group name") },
+                    singleLine = true,
+                    colors = io.github.secnewt.ui.neonFieldColors(),
+                    textStyle = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    "Only on this phone; the others in the group don't see it. Leave it empty to show everyone's names.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = { onRename(name) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("Save name", style = MaterialTheme.typography.titleMedium)
             }
         },
         dismissButton = {

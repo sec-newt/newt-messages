@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.ui.text.withLink
 import androidx.compose.foundation.clickable
 import io.github.secnewt.messages.chats.Links
@@ -72,10 +73,20 @@ fun ChatScreen(
     attached: String? = null,
     onRemoveAttachment: () -> Unit = {},
     onDelete: (() -> Unit)? = null,
+    /** Keep a copy of a picture or file: (address, name, type). */
+    onSave: ((String, String, String) -> Unit)? = null,
+    /** Name a group; null for one-to-one chats. */
+    onRename: ((String) -> Unit)? = null,
 ) {
+    var renaming by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    if (renaming && onRename != null) {
+        RenameGroupDialog(chat.name.orEmpty(), onRename = { renaming = false; onRename(it) }, onCancel = { renaming = false })
+    }
     var viewing by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<String?>(null) }
     var confirmDelete by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
-    viewing?.let { PictureViewer(it) { viewing = null } }
+    viewing?.let { uri ->
+        PictureViewer(uri, onClose = { viewing = null }, onSave = onSave?.let { save -> { save(uri, "picture", "image/jpeg") } })
+    }
     if (confirmDelete && onDelete != null) {
         DeleteChatDialog(chat.title, onDelete = { confirmDelete = false; onDelete() }, onCancel = { confirmDelete = false })
     }
@@ -83,6 +94,11 @@ fun ChatScreen(
         topBar = {
             Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { ScreenHeader(chat.title, onBack) }
+                if (onRename != null && chat.isGroup) {
+                    androidx.compose.material3.IconButton(onClick = { renaming = true }, modifier = Modifier.size(56.dp)) {
+                        Icon(Icons.Filled.Edit, contentDescription = "Rename this group")
+                    }
+                }
                 if (onDelete != null) {
                     androidx.compose.material3.IconButton(onClick = { confirmDelete = true }, modifier = Modifier.size(56.dp)) {
                         Icon(Icons.Filled.Delete, contentDescription = "Delete this chat")
@@ -115,7 +131,7 @@ fun ChatScreen(
             items(messages.asReversed(), key = { it.id }) { message ->
                 Bubble(
                     message, showName = chat.isGroup, time = time(message.timeMillis),
-                    onDownload = { onDownload(message) }, onOpenPicture = { viewing = it },
+                    onDownload = { onDownload(message) }, onOpenPicture = { viewing = it }, onSave = onSave,
                 )
             }
         }
@@ -123,7 +139,14 @@ fun ChatScreen(
 }
 
 @Composable
-private fun Bubble(message: Message, showName: Boolean, time: String, onDownload: () -> Unit, onOpenPicture: (String) -> Unit) {
+private fun Bubble(
+    message: Message,
+    showName: Boolean,
+    time: String,
+    onDownload: () -> Unit,
+    onOpenPicture: (String) -> Unit,
+    onSave: ((String, String, String) -> Unit)?,
+) {
     val who = message.from?.shownName
     val color = if (who == null) MaterialTheme.colorScheme.primary else personOutline(who)
     val reactions = message.reactions.joinToString(", ") { r -> "${r.emoji} from ${r.from?.shownName ?: "you"}" }
@@ -135,7 +158,7 @@ private fun Bubble(message: Message, showName: Boolean, time: String, onDownload
     }
     Row(
         modifier = Modifier.fillMaxWidth().then(
-            if (message.waiting || message.images.isNotEmpty() || Links.find(message.body).isNotEmpty()) {
+            if (message.waiting || message.images.isNotEmpty() || message.files.isNotEmpty() || Links.find(message.body).isNotEmpty()) {
                 Modifier.semantics(mergeDescendants = false) {}
             } else {
                 Modifier.clearAndSetSemantics { contentDescription = spoken }
@@ -168,6 +191,17 @@ private fun Bubble(message: Message, showName: Boolean, time: String, onDownload
             ) {
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     message.images.forEach { uri -> MmsImage(uri) { onOpenPicture(uri) } }
+                    message.files.forEach { file ->
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("📎 ${file.name}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f, fill = false))
+                            if (onSave != null) {
+                                androidx.compose.material3.OutlinedButton(
+                                    onClick = { onSave(file.uri, file.name, file.type) },
+                                    modifier = Modifier.heightIn(min = 48.dp),
+                                ) { Text("Save", style = MaterialTheme.typography.titleMedium) }
+                            }
+                        }
+                    }
                     if (message.body.isNotEmpty()) Text(linked(message.body), style = MaterialTheme.typography.bodyLarge)
                     if (message.waiting) {
                         androidx.compose.material3.OutlinedButton(onClick = onDownload, modifier = Modifier.heightIn(min = 48.dp)) {

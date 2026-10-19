@@ -27,6 +27,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import io.github.secnewt.messages.chats.Chat
 import io.github.secnewt.messages.chats.ChatTab
+import io.github.secnewt.messages.chats.GroupNames
 import io.github.secnewt.messages.chats.Message
 import io.github.secnewt.messages.mms.Mms
 import io.github.secnewt.messages.ui.Pictures
@@ -131,7 +132,9 @@ class MainActivity : ComponentActivity() {
         val chats by produceState(emptyList<Chat>(), version) { value = withContext(Dispatchers.IO) { store.chats() } }
         val thread = openThread
         val chat = chats.firstOrNull { it.threadId == thread }
-            ?: thread?.takeIf { startPeople.isNotEmpty() }?.let { Chat(it, startPeople.map(store::person), "", System.currentTimeMillis()) }
+            ?: thread?.takeIf { startPeople.isNotEmpty() }?.let {
+                Chat(it, startPeople.map(store::person), "", System.currentTimeMillis(), name = GroupNames(this).name(it))
+            }
         if (thread == null || chat == null) {
             ChatListScreen(
                 chats, tab, onTab = { tab = it }, onOpen = { openThread = it.threadId }, time = ::time,
@@ -176,6 +179,11 @@ class MainActivity : ComponentActivity() {
                 openThread = null
                 Thread { delete(thread) }.start()
             },
+            onSave = { uri, name, type -> Thread { save(uri, name, type) }.start() },
+            onRename = if (chat.isGroup) ({ name ->
+                GroupNames(this).rename(thread, name)
+                version++
+            }) else null,
         )
     }
 
@@ -198,6 +206,15 @@ class MainActivity : ComponentActivity() {
             listOf(bytes to "image/jpeg")
         }.orEmpty()
         Mms.send(this, to, text, images)
+    }
+
+    private fun save(uri: String, name: String, type: String) {
+        // A picture's real type (PNG, GIF…) comes from the message store.
+        val real = contentResolver.getType(Uri.parse(uri))?.takeIf { it.contains('/') } ?: type
+        val where = io.github.secnewt.messages.chats.Saving.save(this, uri, name, real)
+        runOnUiThread {
+            Toast.makeText(this, if (where != null) "Saved to $where" else "Couldn't save it", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun delete(threadId: Long) {

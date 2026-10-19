@@ -97,6 +97,8 @@ receiving moves up into Phase 1, and switching waits for it.
     Android's MMS service does every network step, including the carrier acknowledgement.
     The emulator has no MMS server, so CI tests the message format; the real test is on the
     phone with QUIK still installed, starting with a throwaway group.
+- [x] From first use (Oct 19): tappable links, full-size pictures, deleting chats, saving
+  pictures and files, renaming groups
 - [ ] Phase 2
 - [ ] Phase 3
 

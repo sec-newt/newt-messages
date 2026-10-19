@@ -5,7 +5,9 @@ import android.content.Context
 import android.net.Uri
 import android.provider.ContactsContract.PhoneLookup
 import android.provider.Telephony
+import io.github.secnewt.messages.chats.Attachment
 import io.github.secnewt.messages.chats.Chat
+import io.github.secnewt.messages.chats.GroupNames
 import io.github.secnewt.messages.chats.Message
 import io.github.secnewt.messages.chats.Person
 import io.github.secnewt.messages.reactions.Folding
@@ -21,6 +23,7 @@ class MessageStore(private val context: Context) {
 
     private val resolver get() = context.contentResolver
     private val names = mutableMapOf<String, String?>()
+    private val groupNames = GroupNames(context)
 
     /** Every chat, newest first. */
     fun chats(): List<Chat> {
@@ -34,7 +37,7 @@ class MessageStore(private val context: Context) {
                     val people = c.getString(2).orEmpty().split(' ').mapNotNull { it.toLongOrNull()?.let(::address) }.map(::person)
                     if (people.isEmpty()) continue
                     val snippet = c.getString(3).orEmpty()
-                    add(Chat(id, people, shownSnippet(snippet), c.getLong(1), unread = unread[id] ?: 0))
+                    add(Chat(id, people, shownSnippet(snippet), c.getLong(1), unread = unread[id] ?: 0, name = groupNames.name(id)))
                 }
             }
         }.orEmpty()
@@ -73,13 +76,13 @@ class MessageStore(private val context: Context) {
                     val id = c.getLong(0)
                     val incoming = c.getInt(2) == Telephony.Mms.MESSAGE_BOX_INBOX
                     val waiting = c.getInt(3) == PduHeadersNotification
-                    val (text, images) = if (waiting) "" to emptyList() else parts(id)
+                    val found = if (waiting) Parts() else parts(id)
                     val from = if (incoming) person(mmsSender(id).orEmpty()) else null
                     add(
                         Message(
                             -id,
-                            if (waiting) "Picture or group message, not downloaded yet" else text,
-                            c.getLong(1) * 1000, from, images = images, waiting = waiting,
+                            if (waiting) "Picture or group message, not downloaded yet" else found.text,
+                            c.getLong(1) * 1000, from, images = found.images, files = found.files, waiting = waiting,
                         ),
                     )
                 }
@@ -87,23 +90,38 @@ class MessageStore(private val context: Context) {
         }.orEmpty()
     }
 
-    /** A message's words and pictures. */
-    private fun parts(mmsId: Long): Pair<String, List<String>> {
+    private data class Parts(val text: String = "", val images: List<String> = emptyList(), val files: List<Attachment> = emptyList())
+
+    /** A message's words, pictures, and any other files. */
+    private fun parts(mmsId: Long): Parts {
         val text = StringBuilder()
         val images = mutableListOf<String>()
+        val files = mutableListOf<Attachment>()
         resolver.query(
-            Uri.parse("content://mms/part"), arrayOf(Telephony.Mms.Part._ID, Telephony.Mms.Part.CONTENT_TYPE, Telephony.Mms.Part.TEXT),
+            Uri.parse("content://mms/part"),
+            arrayOf(
+                Telephony.Mms.Part._ID, Telephony.Mms.Part.CONTENT_TYPE, Telephony.Mms.Part.TEXT,
+                Telephony.Mms.Part.FILENAME, Telephony.Mms.Part.NAME, Telephony.Mms.Part.CONTENT_LOCATION,
+            ),
             "${Telephony.Mms.Part.MSG_ID} = ?", arrayOf(mmsId.toString()), null,
         )?.use { c ->
             while (c.moveToNext()) {
-                val type = c.getString(1).orEmpty()
+                val type = c.getString(1).orEmpty().lowercase()
+                val uri = "content://mms/part/${c.getLong(0)}"
                 when {
                     type == "text/plain" -> c.getString(2)?.let { if (text.isNotEmpty()) text.append('\n'); text.append(it) }
-                    type.startsWith("image/") -> images += "content://mms/part/${c.getLong(0)}"
+                    // The layout file that says where things go on screen; nothing to show.
+                    type == "application/smil" -> Unit
+                    type.startsWith("image/") -> images += uri
+                    else -> {
+                        val name = listOf(c.getString(3), c.getString(4), c.getString(5)).firstOrNull { !it.isNullOrBlank() }
+                            ?: "attachment"
+                        files += Attachment(uri, name, type)
+                    }
                 }
             }
         }
-        return text.toString() to images
+        return Parts(text.toString(), images, files)
     }
 
     /** Who sent an incoming MMS (address type 137 is "from"). */

@@ -30,6 +30,10 @@ object SampleChats {
         Message(3, "I'll bring the chairs", 10 * HOUR, sam, reactions = listOf(Reaction("👍", null))),
         Message(4, "Thank you both!", 11 * HOUR, becca),
         Message(-5, "The new chairs", 11 * HOUR + 60_000, sam, images = listOf("content://mms/part/1")),
+        Message(
+            -7, "Here's Sunday's bulletin", 11 * HOUR + 90_000, mom,
+            files = listOf(io.github.secnewt.messages.chats.Attachment("content://mms/part/2", "bulletin.pdf", "application/pdf")),
+        ),
         Message(-6, "Picture or group message, not downloaded yet", 11 * HOUR + 120_000, mom, waiting = true),
     )
 
