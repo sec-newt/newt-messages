@@ -174,7 +174,13 @@ class MainActivity : ComponentActivity() {
                     io.github.secnewt.messages.settings.Speaker.speak(
                         this,
                         io.github.secnewt.messages.settings.Speaking.text("Becca", "", null, if (current.readMessage) "Can you grab milk?" else null),
-                    )
+                    ) { spoke ->
+                        if (!spoke) {
+                            Toast.makeText(
+                                this, "No voice found. Check Android's text-to-speech settings (Voice settings, below).", Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                    }
                 },
             )
             return
