@@ -125,12 +125,20 @@ class ChatScreensTest {
         }
         composeRule.onNodeWithText("Save").performClick()
         assertEquals("bulletin.pdf", saved)
-        // Opens the rename dialog with the current name, and saving passes it back. The name
-        // field's blinking cursor never stops, so the test clock is stepped by hand from here.
+        composeRule.onNodeWithContentDescription("Rename this group").assertIsDisplayed()
+        assertEquals(null, renamed)
+    }
+
+    @Test
+    fun theRenameDialogSavesTheName() {
+        var renamed: String? = null
+        // The name field's blinking cursor never stops, so the clock is stepped by hand.
         composeRule.mainClock.autoAdvance = false
-        composeRule.onNodeWithContentDescription("Rename this group").performClick()
-        composeRule.mainClock.advanceTimeBy(2000)
-        composeRule.onNodeWithText("Name this group").assertExists()
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) { RenameGroupDialog("Family", onRename = { renamed = it }, onCancel = {}) }
+        }
+        composeRule.mainClock.advanceTimeBy(1000)
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("Save name").performClick()
         composeRule.mainClock.advanceTimeBy(500)
         assertEquals("Family", renamed)
