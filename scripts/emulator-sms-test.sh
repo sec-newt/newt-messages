@@ -63,8 +63,8 @@ cat send.log
 grep -q "Text sent" send.log || fail "Tapping Send didn't send the text."
 echo "Sending works: tapping Send sent the text."
 
-# Renaming a group: open a two-person chat from a link, tap Rename, type a name, save,
-# and the header shows it.
+# Renaming a group: open a two-person chat from a link, open its details, tap Rename, type
+# a name, save, and the details show it.
 tap() { # tap the element whose content-desc or text is $1
   adb shell uiautomator dump /sdcard/ui.xml > /dev/null
   adb pull /sdcard/ui.xml ui.xml > /dev/null
@@ -78,7 +78,8 @@ tap() { # tap the element whose content-desc or text is $1
 adb shell am start -W -a android.intent.action.SENDTO -d "smsto:5550111,5550122" \
   -n "$pkg/io.github.secnewt.messages.MainActivity" > /dev/null
 sleep 3
-tap "Rename this group"
+tap "Group details"
+tap "Rename"
 tap "Group name"
 adb shell input text "Small%sgroup"
 sleep 1
@@ -87,6 +88,14 @@ adb shell uiautomator dump /sdcard/ui.xml > /dev/null
 adb pull /sdcard/ui.xml ui.xml > /dev/null
 grep -q 'text="Small group"' ui.xml || fail "After renaming, the group's name didn't show."
 echo "Renaming a group works."
+
+# Removing someone starts a new group with the others, which opens.
+tap "Remove 5550122 from the group"
+tap "Start new group"
+adb shell uiautomator dump /sdcard/ui.xml > /dev/null
+adb pull /sdcard/ui.xml ui.xml > /dev/null
+grep -q 'text="5550111"' ui.xml || { grep -o 'text="[^"]*"' ui.xml | head; fail "Removing someone didn't open the chat with the others."; }
+echo "Removing someone from a group works."
 
 adb logcat -d > after.log
 if grep -q "FATAL EXCEPTION" after.log; then

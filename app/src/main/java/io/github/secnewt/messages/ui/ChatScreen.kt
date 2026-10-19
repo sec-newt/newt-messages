@@ -22,8 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.ui.text.withLink
 import androidx.compose.foundation.clickable
 import io.github.secnewt.messages.chats.Links
@@ -72,36 +71,22 @@ fun ChatScreen(
     onAttach: (() -> Unit)? = null,
     attached: String? = null,
     onRemoveAttachment: () -> Unit = {},
-    onDelete: (() -> Unit)? = null,
     /** Keep a copy of a picture or file: (address, name, type). */
     onSave: ((String, String, String) -> Unit)? = null,
-    /** Name a group; null for one-to-one chats. */
-    onRename: ((String) -> Unit)? = null,
+    /** Who's in the chat, renaming, adding or removing people, deleting. */
+    onDetails: (() -> Unit)? = null,
 ) {
-    var renaming by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
-    if (renaming && onRename != null) {
-        RenameGroupDialog(chat.name.orEmpty(), onRename = { renaming = false; onRename(it) }, onCancel = { renaming = false })
-    }
     var viewing by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<String?>(null) }
-    var confirmDelete by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     viewing?.let { uri ->
         PictureViewer(uri, onClose = { viewing = null }, onSave = onSave?.let { save -> { save(uri, "picture", "image/jpeg") } })
-    }
-    if (confirmDelete && onDelete != null) {
-        DeleteChatDialog(chat.title, onDelete = { confirmDelete = false; onDelete() }, onCancel = { confirmDelete = false })
     }
     Scaffold(
         topBar = {
             Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { ScreenHeader(chat.title, onBack) }
-                if (onRename != null && chat.isGroup) {
-                    androidx.compose.material3.IconButton(onClick = { renaming = true }, modifier = Modifier.size(56.dp)) {
-                        Icon(Icons.Filled.Edit, contentDescription = "Rename this group")
-                    }
-                }
-                if (onDelete != null) {
-                    androidx.compose.material3.IconButton(onClick = { confirmDelete = true }, modifier = Modifier.size(56.dp)) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Delete this chat")
+                if (onDetails != null) {
+                    androidx.compose.material3.IconButton(onClick = onDetails, modifier = Modifier.size(56.dp)) {
+                        Icon(Icons.Filled.Info, contentDescription = if (chat.isGroup) "Group details" else "Chat details")
                     }
                 }
             }
