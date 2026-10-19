@@ -22,6 +22,17 @@ fail() {
   exit 1
 }
 
+# Turn on "Say who's messaging" the way the settings screen would, so the first text is announced.
+printf '%s\n' \
+  "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>" \
+  '<map>' \
+  '    <string name="speak">ALWAYS</string>' \
+  '    <boolean name="quiet_during_dnd" value="false" />' \
+  '</map>' \
+  | adb shell "run-as $pkg sh -c 'mkdir -p shared_prefs && cat > shared_prefs/settings.xml'"
+# If the app is already running it has the old settings in memory; end it (without marking it stopped).
+adb shell am kill "$pkg"
+
 adb logcat -c
 adb emu sms send 5550111 'Sounds good'
 sleep 6
@@ -29,7 +40,10 @@ adb logcat -d -s NewtSms:I > receive.log
 grep -q "Stored an incoming text" receive.log || fail "An incoming text wasn't stored."
 adb shell dumpsys notification --noredact > notifications.txt
 grep -q "pkg=$pkg.*messages" notifications.txt || grep -q "$pkg" notifications.txt || fail "No notification for the incoming text."
+adb logcat -d -s NewtSpeak:I > speak.log
+grep -q "Announcing a message" speak.log || fail "\"Say who's messaging\" is on, but the text wasn't announced."
 echo "Incoming text stored and notified."
+echo "The text was announced."
 
 adb logcat -c
 adb emu sms send 5550111 'Liked "Sounds good"'

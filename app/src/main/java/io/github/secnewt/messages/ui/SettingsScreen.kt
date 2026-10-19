@@ -31,7 +31,13 @@ import io.github.secnewt.ui.SectionHeading
 
 /** The app's settings: how reactions notify, and saying who a message is from. */
 @Composable
-fun SettingsScreen(settings: MessagesSettings, onChange: (MessagesSettings) -> Unit, onBack: () -> Unit, onOpenVoiceSettings: () -> Unit = {}) {
+fun SettingsScreen(
+    settings: MessagesSettings,
+    onChange: (MessagesSettings) -> Unit,
+    onBack: () -> Unit,
+    onOpenVoiceSettings: () -> Unit = {},
+    onTestVoice: () -> Unit = {},
+) {
     Scaffold(topBar = { Column(Modifier.statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp)) { ScreenHeader("Settings", onBack) } }) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
@@ -64,6 +70,35 @@ fun SettingsScreen(settings: MessagesSettings, onChange: (MessagesSettings) -> U
                     }
                     Switch(checked = settings.quietDuringDnd, onCheckedChange = null)
                 }
+            }
+            item {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 64.dp)
+                        .toggleable(value = settings.readMessage, role = Role.Switch) { onChange(settings.copy(readMessage = it)) },
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Read the message too", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "\"Message from Becca: Can you grab milk?\" Sign-in codes are never read out.",
+                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = settings.readMessage, onCheckedChange = null)
+                }
+            }
+            item {
+                androidx.compose.material3.OutlinedButton(onClick = onTestVoice, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+                    Text("Test the voice", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+            item {
+                Text(
+                    "It plays at your notification volume.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             item {
                 androidx.compose.material3.TextButton(onClick = onOpenVoiceSettings, modifier = Modifier.heightIn(min = 56.dp)) {

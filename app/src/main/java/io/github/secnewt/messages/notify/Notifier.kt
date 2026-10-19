@@ -81,9 +81,11 @@ class Notifier(private val context: Context) {
         Codes.find(unread.last().body)?.let { builder.addAction(copy(it)) }
         post(threadId.toInt(), builder.build())
         if (announce) {
-            unread.last().from?.let { from ->
+            val last = unread.last()
+            last.from?.let { from ->
                 val group = if (people.size > 1) store.chats().firstOrNull { it.threadId == threadId }?.name ?: "a group" else null
-                Speaker.announce(context, Speaking.text(from.name, from.address, group))
+                val body = if (settings.settings().readMessage) last.body.ifBlank { if (last.images.isNotEmpty()) "a picture" else "" } else null
+                Speaker.announce(context, Speaking.text(from.name, from.address, group, body))
             }
         }
     }
