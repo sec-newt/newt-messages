@@ -28,8 +28,7 @@ class WelcomeScreenTest {
     @Test
     fun welcomeDark() {
         composeRule.newtScreenshot("welcome-dark", dark = true) { WelcomeScreen() }
-        // The debug build adds " (test)" to the name, so match the start.
-        composeRule.onNodeWithText("Newt Messages", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Make Newt Messages my messaging app").assertIsDisplayed()
     }
 
     @Test

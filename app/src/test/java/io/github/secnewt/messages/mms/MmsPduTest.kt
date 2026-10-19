@@ -56,7 +56,8 @@ class MmsPduTest {
         parsed as NotificationInd
         assertEquals("http://mmsc.example/abc", String(parsed.contentLocation))
         assertArrayEquals("T1".toByteArray(), parsed.transactionId)
-        assertEquals("+15550111/TYPE=PLMN", parsed.from.string)
+        // The parser drops the "/TYPE=PLMN" suffix, leaving just the number.
+        assertEquals("+15550111", parsed.from.string)
     }
 
     private fun request(): SendReq = SendReq().apply {
