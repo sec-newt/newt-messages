@@ -38,6 +38,16 @@ class ChatSortingTest {
     }
 
     @Test
+    fun `unread chats come right after pinned ones`() {
+        val chats = listOf(
+            chat(1, becca, time = 30),
+            chat(2, sam, time = 10).copy(unread = 2),
+            chat(3, Person("4695550133"), time = 5, pinned = true),
+        )
+        assertEquals(listOf(3L, 2L, 1L), ChatSorting.inTab(chats, ChatTab.PEOPLE).map { it.threadId })
+    }
+
+    @Test
     fun `search by member finds every group with them`() {
         val family = chat(1, becca, sam).copy(name = "Family")
         val church = chat(2, becca, Person("4695550133"))
