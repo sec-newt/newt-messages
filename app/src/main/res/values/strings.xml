@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Newt Messages</string>
+    <string name="unread_permission">see how many messages Newt Messages has unread</string>
+    <string name="unread_permission_description">Only the number of unread messages. Only apps signed with the Newt key can have this.</string>
 </resources>
