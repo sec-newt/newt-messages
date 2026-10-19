@@ -77,6 +77,19 @@ class ReactionsTest {
     }
 
     @Test
+    fun `reacting to a message, taking it back, and long quotes`() {
+        val m = msg(1, "See you at the game", becca)
+        assertEquals("Loved “See you at the game”", Reactions.reply(m, "❤️"))
+        val mineAlready = m.copy(reactions = listOf(io.github.secnewt.messages.chats.Reaction("❤️", null)))
+        assertEquals("Removed a heart from “See you at the game”", Reactions.reply(mineAlready, "❤️"))
+        val long = msg(2, "x".repeat(300), becca)
+        val text = checkNotNull(Reactions.reply(long, "👍"))
+        // What we send still finds its message.
+        assertEquals(2L, Reactions.target(checkNotNull(Reactions.parse(text)), listOf(long))?.id)
+        assertEquals(null, Reactions.reply(msg(3, "", becca), "👍"))
+    }
+
+    @Test
     fun `sending uses iPhone wording`() {
         assertEquals("Loved “Let's do lunch”", Reactions.iphoneText("❤️", "Let's do lunch"))
         assertEquals("Reacted 🙏 to “x”", Reactions.iphoneText("🙏", "x"))

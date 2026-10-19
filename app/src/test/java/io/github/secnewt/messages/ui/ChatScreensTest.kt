@@ -5,6 +5,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
@@ -202,6 +204,44 @@ class ChatScreensTest {
         composeRule.onNodeWithText("Add 214 555 0199").performClick()
         composeRule.onNodeWithText("Text 214 555 0199").performClick()
         assertEquals(listOf("214 555 0199"), started)
+    }
+
+    @Test
+    fun longPressToReact() {
+        var reacted: Pair<Long, String>? = null
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatScreen(
+                    SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
+                    time = SampleChats.time, onReact = { m, e -> reacted = m.id to e }, onDeleteMessage = {},
+                )
+            }
+        }
+        composeRule.onNodeWithContentDescription("Becca: Thank you both!", substring = true)
+            .performTouchInput { longClick(androidx.compose.ui.geometry.Offset(80f, center.y)) }
+        composeRule.onNodeWithContentDescription("React 🙏").performClick()
+        assertEquals(4L to "🙏", reacted)
+    }
+
+    @Test
+    fun deletingOneMessageAsksFirst() {
+        var deleted: Long? = null
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatScreen(
+                    SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
+                    time = SampleChats.time, onReact = { _, _ -> }, onDeleteMessage = { deleted = it.id },
+                )
+            }
+        }
+        composeRule.onNodeWithContentDescription("Becca: Thank you both!", substring = true)
+            .fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.CustomActions]
+            .first { it.label == "Message options" }.action()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Delete this message").performClick()
+        assertEquals(null, deleted)
+        composeRule.onNodeWithText("Delete").performClick()
+        assertEquals(4L, deleted)
     }
 
     @Test
