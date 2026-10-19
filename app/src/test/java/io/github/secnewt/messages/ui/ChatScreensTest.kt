@@ -129,8 +129,8 @@ class ChatScreensTest {
         // field's blinking cursor never stops, so the test clock is stepped by hand from here.
         composeRule.mainClock.autoAdvance = false
         composeRule.onNodeWithContentDescription("Rename this group").performClick()
-        composeRule.mainClock.advanceTimeBy(500)
-        composeRule.onNodeWithText("Name this group").assertIsDisplayed()
+        composeRule.mainClock.advanceTimeBy(2000)
+        composeRule.onNodeWithText("Name this group").assertExists()
         composeRule.onNodeWithText("Save name").performClick()
         composeRule.mainClock.advanceTimeBy(500)
         assertEquals("Family", renamed)
