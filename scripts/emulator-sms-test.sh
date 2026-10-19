@@ -73,11 +73,13 @@ echo "Sending works: tapping Send sent the text."
 # a name, save, and the details show it.
 tap() { # tap the element whose content-desc or text is $1, waiting up to ~10 s for it
   local b=""
-  for _ in 1 2 3 4 5; do
+  for try in 1 2 3 4 5 6 7 8; do
     adb shell uiautomator dump /sdcard/ui.xml > /dev/null
     adb pull /sdcard/ui.xml ui.xml > /dev/null
     b="$(grep -o "\(content-desc\|text\)=\"$1\"[^>]*bounds=\"\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]\"" ui.xml | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]' | head -1 || true)"
     [ -n "$b" ] && break
+    # Not there yet: wait twice (it may still be drawing), then scroll down to look further.
+    if [ "$try" -gt 2 ]; then adb shell input swipe 540 1700 540 900 300; fi
     sleep 2
   done
   [ -n "$b" ] || { grep -o 'text="[^"]\+"\|content-desc="[^"]\+"' ui.xml; fail "Couldn't find \"$1\" on screen."; }
@@ -100,8 +102,6 @@ grep -q 'text="Small group"' ui.xml || fail "After renaming, the group's name di
 echo "Renaming a group works."
 
 # Removing someone starts a new group with the others (keeping the name), which opens.
-adb shell input swipe 540 1800 540 700
-sleep 1
 tap "Remove 5550122 from the group"
 tap "Start new group"
 tap "Group details"
