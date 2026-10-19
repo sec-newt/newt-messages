@@ -177,11 +177,18 @@ class MainActivity : ComponentActivity() {
             return
         }
         if (thread == null || chat == null) {
+            var query by rememberSaveable { mutableStateOf("") }
+            val hits by produceState(emptyList<io.github.secnewt.messages.chats.SearchHit>(), query, version) {
+                value = if (query.isBlank()) emptyList() else withContext(Dispatchers.IO) { store.search(query) }
+            }
             ChatListScreen(
                 chats, tab, onTab = { tab = it }, onOpen = { openThread = it.threadId }, time = ::time,
                 onDelete = { chat -> Thread { delete(chat.threadId) }.start() },
                 onNewChat = { newChat = true },
                 onOpenSettings = { showSettings = true },
+                query = query,
+                onQuery = { query = it },
+                hits = hits,
             )
             return
         }
@@ -224,6 +231,13 @@ class MainActivity : ComponentActivity() {
                     showDetails = false
                     openThread = null
                     Thread { delete(thread) }.start()
+                },
+                isBlocked = { person -> io.github.secnewt.messages.chats.Blocking(this).isBlocked(person.address) },
+                onBlock = { person, block ->
+                    val blocking = io.github.secnewt.messages.chats.Blocking(this)
+                    val ok = if (block) blocking.block(person.address) else blocking.unblock(person.address)
+                    if (!ok) Toast.makeText(this, "Android didn't allow that change.", Toast.LENGTH_LONG).show()
+                    version++
                 },
                 onPin = { on ->
                     io.github.secnewt.messages.settings.SettingsStore(this).setPinned(thread, on)

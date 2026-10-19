@@ -193,6 +193,38 @@ class MessageStore(private val context: Context) {
         resolver.update(uri, values, null, null)
     }
 
+    /** Messages containing [query], newest first: texts, and the words in picture messages. */
+    fun search(query: String, limit: Int = 50): List<io.github.secnewt.messages.chats.SearchHit> {
+        val q = query.trim()
+        if (q.length < 2) return emptyList()
+        // SQL LIKE with the user's words escaped, so % and _ are just characters.
+        val like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        val hits = mutableListOf<io.github.secnewt.messages.chats.SearchHit>()
+        resolver.query(
+            Telephony.Sms.CONTENT_URI, arrayOf(Telephony.Sms.THREAD_ID, Telephony.Sms.BODY, Telephony.Sms.DATE),
+            "${Telephony.Sms.BODY} LIKE ? ESCAPE '\\'", arrayOf(like), "${Telephony.Sms.DATE} DESC LIMIT $limit",
+        )?.use { c ->
+            while (c.moveToNext()) {
+                val body = c.getString(1).orEmpty()
+                if (Reactions.parse(body) == null) hits += io.github.secnewt.messages.chats.SearchHit(c.getLong(0), body, c.getLong(2))
+            }
+        }
+        resolver.query(
+            Uri.parse("content://mms/part"), arrayOf(Telephony.Mms.Part.MSG_ID, Telephony.Mms.Part.TEXT),
+            "${Telephony.Mms.Part.CONTENT_TYPE} = 'text/plain' AND ${Telephony.Mms.Part.TEXT} LIKE ? ESCAPE '\\'", arrayOf(like), null,
+        )?.use { c ->
+            while (c.moveToNext()) {
+                val body = c.getString(1).orEmpty()
+                if (Reactions.parse(body) != null) continue
+                resolver.query(
+                    Uri.withAppendedPath(Telephony.Mms.CONTENT_URI, c.getLong(0).toString()),
+                    arrayOf(Telephony.Mms.THREAD_ID, Telephony.Mms.DATE), null, null, null,
+                )?.use { m -> if (m.moveToFirst()) hits += io.github.secnewt.messages.chats.SearchHit(m.getLong(0), body, m.getLong(1) * 1000) }
+            }
+        }
+        return hits.sortedByDescending { it.timeMillis }.take(limit)
+    }
+
     /** Deletes one message (MMS messages have negative ids here). */
     fun deleteMessage(id: Long): Int =
         if (id < 0) resolver.delete(Uri.withAppendedPath(Telephony.Mms.CONTENT_URI, (-id).toString()), null, null)

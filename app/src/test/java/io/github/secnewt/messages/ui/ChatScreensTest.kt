@@ -284,6 +284,33 @@ class ChatScreensTest {
     }
 
     @Test
+    fun searchResults() = composeRule.newtScreenshot("search-dark", dark = true) {
+        ChatListScreen(
+            SampleChats.chats, ChatTab.PEOPLE, onTab = {}, onOpen = {}, time = SampleChats.time,
+            query = "becca", onQuery = {},
+            hits = listOf(io.github.secnewt.messages.chats.SearchHit(4, "Becca said the brisket is ready at six", 11 * SampleChats.HOUR)),
+        )
+    }
+
+    @Test
+    fun blockingAMemberAsksFirst() {
+        var blocked: Pair<String, Boolean>? = null
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatDetailsScreen(
+                    SampleChats.family, onBack = {}, onText = {}, onCall = {}, onAddToContacts = {}, onRename = {},
+                    onNewMembers = {}, onPickContact = {}, onDelete = {}, onBlock = { p, b -> blocked = p.address to b },
+                )
+            }
+        }
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Block Sam"))
+        composeRule.onNodeWithText("Block Sam").performClick()
+        composeRule.onNodeWithText("Block Sam?").assertIsDisplayed()
+        composeRule.onNodeWithText("Block").performClick()
+        assertEquals("+12145550122" to true, blocked)
+    }
+
+    @Test
     fun reactionsAreReadOutWithTheMessage() {
         composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { family() } }
         composeRule.onNodeWithContentDescription("Reactions: ❤️ from Mom, ❤️ from Becca, 😂 from Sam", substring = true).assertIsDisplayed()

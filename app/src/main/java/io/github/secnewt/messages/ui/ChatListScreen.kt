@@ -85,6 +85,10 @@ fun ChatListScreen(
     onOpenSettings: () -> Unit = {},
     onDelete: ((Chat) -> Unit)? = null,
     onNewChat: (() -> Unit)? = null,
+    /** Search: what's typed, and the messages that match it (from the message store). */
+    query: String = "",
+    onQuery: ((String) -> Unit)? = null,
+    hits: List<io.github.secnewt.messages.chats.SearchHit> = emptyList(),
 ) {
     var deleting by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Chat?>(null) }
     deleting?.let { chat ->
@@ -103,14 +107,50 @@ fun ChatListScreen(
             }
         },
     ) { padding ->
-        val shown = ChatSorting.inTab(chats, tab)
+        val searching = query.isNotBlank()
+        val shown = if (searching) emptyList() else ChatSorting.inTab(chats, tab)
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
             // Room at the bottom so the New message button never covers the last chat.
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
         ) {
-            item { TabHeader(tab.label, onOpenSettings) }
-            if (shown.isEmpty()) {
+            item { TabHeader(if (searching) "Search" else tab.label, onOpenSettings) }
+            if (onQuery != null) {
+                item {
+                    androidx.compose.material3.OutlinedTextField(
+                        value = query,
+                        onValueChange = onQuery,
+                        label = { Text("Search chats and messages") },
+                        singleLine = true,
+                        colors = io.github.secnewt.ui.neonFieldColors(),
+                        textStyle = MaterialTheme.typography.bodyLarge,
+                        trailingIcon = if (searching) ({
+                            androidx.compose.material3.TextButton(onClick = { onQuery("") }) { Text("Clear") }
+                        }) else null,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    )
+                }
+            }
+            if (searching) {
+                val people = io.github.secnewt.messages.chats.Search.chats(chats, query)
+                if (people.isEmpty() && hits.isEmpty()) {
+                    item { Text("Nothing matches “${query.trim()}”.", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 16.dp)) }
+                }
+                if (people.isNotEmpty()) item { io.github.secnewt.ui.SectionLabel("Chats") }
+                items(people, key = { "c" + it.threadId }) { chat ->
+                    ChatRow(chat, time(chat.lastTimeMillis), onLongPress = null) { onOpen(chat) }
+                    HorizontalDivider()
+                }
+                if (hits.isNotEmpty()) item { io.github.secnewt.ui.SectionLabel("Messages", modifier = Modifier.padding(top = 12.dp)) }
+                items(hits.mapNotNull { hit -> chats.firstOrNull { it.threadId == hit.threadId }?.let { hit to it } }) { (hit, chat) ->
+                    ChatRow(
+                        chat.copy(lastMessage = io.github.secnewt.messages.chats.Search.excerpt(hit.body, query), unread = 0, pinned = false),
+                        time(hit.timeMillis), onLongPress = null,
+                    ) { onOpen(chat) }
+                    HorizontalDivider()
+                }
+            }
+            if (!searching && shown.isEmpty()) {
                 item {
                     Text(
                         emptyText(tab),
