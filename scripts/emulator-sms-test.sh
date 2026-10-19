@@ -65,12 +65,16 @@ echo "Sending works: tapping Send sent the text."
 
 # Renaming a group: open a two-person chat from a link, open its details, tap Rename, type
 # a name, save, and the details show it.
-tap() { # tap the element whose content-desc or text is $1
-  adb shell uiautomator dump /sdcard/ui.xml > /dev/null
-  adb pull /sdcard/ui.xml ui.xml > /dev/null
-  local b
-  b="$(grep -o "\(content-desc\|text\)=\"$1\"[^>]*bounds=\"\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]\"" ui.xml | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]' | head -1 || true)"
-  [ -n "$b" ] || { grep -o 'text="[^"]*"\|content-desc="[^"]*"' ui.xml | head -30; fail "Couldn't find \"$1\" on screen."; }
+tap() { # tap the element whose content-desc or text is $1, waiting up to ~10 s for it
+  local b=""
+  for _ in 1 2 3 4 5; do
+    adb shell uiautomator dump /sdcard/ui.xml > /dev/null
+    adb pull /sdcard/ui.xml ui.xml > /dev/null
+    b="$(grep -o "\(content-desc\|text\)=\"$1\"[^>]*bounds=\"\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]\"" ui.xml | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]' | head -1 || true)"
+    [ -n "$b" ] && break
+    sleep 2
+  done
+  [ -n "$b" ] || { grep -o 'text="[^"]\+"\|content-desc="[^"]\+"' ui.xml; fail "Couldn't find \"$1\" on screen."; }
   read -r x1 y1 x2 y2 <<< "$(echo "$b" | tr -c '0-9' ' ')"
   adb shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))
   sleep 2
@@ -100,6 +104,26 @@ adb pull /sdcard/ui.xml ui.xml > /dev/null
 grep -q 'text="2 people, plus you"' ui.xml && grep -q 'text="Small group"' ui.xml && ! grep -q 'text="5550122"' ui.xml \
   || { grep -o 'text="[^"]*"' ui.xml | head -20; fail "Removing someone didn't open a new group with the others."; }
 echo "Removing someone from a group works."
+
+# Starting a new chat: back to the list, New message, type a number, add it, open the chat.
+adb shell am start -W -n "$pkg/io.github.secnewt.messages.MainActivity" > /dev/null
+adb shell input keyevent KEYCODE_BACK
+sleep 1
+adb shell input keyevent KEYCODE_BACK
+sleep 1
+adb shell am start -W -n "$pkg/io.github.secnewt.messages.MainActivity" > /dev/null
+sleep 2
+tap "New message"
+tap "Name or number"
+adb shell input text "5550177"
+sleep 1
+tap "Add 5550177"
+tap "Text 5550177"
+adb shell uiautomator dump /sdcard/ui.xml > /dev/null
+adb pull /sdcard/ui.xml ui.xml > /dev/null
+grep -q 'content-desc="Send"' ui.xml && grep -q 'text="5550177"' ui.xml \
+  || { grep -o 'text="[^"]*"\|content-desc="[^"]*"' ui.xml | head -20; fail "New message didn't open a chat with the typed number."; }
+echo "Starting a new chat works."
 
 adb logcat -d > after.log
 if grep -q "FATAL EXCEPTION" after.log; then
