@@ -132,7 +132,9 @@ class MainActivity : ComponentActivity() {
         val chats by produceState(emptyList<Chat>(), version) { value = withContext(Dispatchers.IO) { store.chats() } }
         val thread = openThread
         val chat = chats.firstOrNull { it.threadId == thread }
-            ?: thread?.takeIf { startPeople.isNotEmpty() }?.let { Chat(it, startPeople.map(store::person), "", System.currentTimeMillis()) }
+            ?: thread?.takeIf { startPeople.isNotEmpty() }?.let {
+                Chat(it, startPeople.map(store::person), "", System.currentTimeMillis(), name = GroupNames(this).name(it))
+            }
         if (thread == null || chat == null) {
             ChatListScreen(
                 chats, tab, onTab = { tab = it }, onOpen = { openThread = it.threadId }, time = ::time,
