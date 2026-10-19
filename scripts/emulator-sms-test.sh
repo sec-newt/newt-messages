@@ -65,11 +65,15 @@ echo "Sending works: tapping Send sent the text."
 
 # Renaming a group: open a two-person chat from a link, open its details, tap Rename, type
 # a name, save, and the details show it.
-tap() { # tap the element whose content-desc or text is $1
-  adb shell uiautomator dump /sdcard/ui.xml > /dev/null
-  adb pull /sdcard/ui.xml ui.xml > /dev/null
-  local b
-  b="$(grep -o "\(content-desc\|text\)=\"$1\"[^>]*bounds=\"\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]\"" ui.xml | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]' | head -1 || true)"
+tap() { # tap the element whose content-desc or text is $1, waiting up to ~10 s for it
+  local b=""
+  for _ in 1 2 3 4 5; do
+    adb shell uiautomator dump /sdcard/ui.xml > /dev/null
+    adb pull /sdcard/ui.xml ui.xml > /dev/null
+    b="$(grep -o "\(content-desc\|text\)=\"$1\"[^>]*bounds=\"\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]\"" ui.xml | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]' | head -1 || true)"
+    [ -n "$b" ] && break
+    sleep 2
+  done
   [ -n "$b" ] || { grep -o 'text="[^"]\+"\|content-desc="[^"]\+"' ui.xml; fail "Couldn't find \"$1\" on screen."; }
   read -r x1 y1 x2 y2 <<< "$(echo "$b" | tr -c '0-9' ' ')"
   adb shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))

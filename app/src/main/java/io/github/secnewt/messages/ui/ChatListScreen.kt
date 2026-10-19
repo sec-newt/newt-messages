@@ -96,6 +96,7 @@ fun ChatListScreen(
             if (onNewChat != null) {
                 androidx.compose.material3.ExtendedFloatingActionButton(
                     onClick = onNewChat,
+                    modifier = Modifier.semantics { contentDescription = "New message" },
                     icon = { Icon(Icons.Filled.Add, contentDescription = null) },
                     text = { Text("New message", style = MaterialTheme.typography.titleMedium) },
                 )
