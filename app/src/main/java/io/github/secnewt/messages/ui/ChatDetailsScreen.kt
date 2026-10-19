@@ -53,6 +53,8 @@ fun ChatDetailsScreen(
     onText: (Person) -> Unit,
     onCall: (Person) -> Unit,
     onAddToContacts: (Person) -> Unit,
+    /** Open a saved contact in the contacts app, to look (false) or edit (true). */
+    onOpenContact: (Person, Boolean) -> Unit = { _, _ -> },
     onRename: (String) -> Unit,
     /** Start a chat with these numbers (a new group when people are added or removed). */
     onNewMembers: (List<String>) -> Unit,
@@ -163,6 +165,7 @@ fun ChatDetailsScreen(
                     onText = { onText(person) },
                     onCall = { onCall(person) },
                     onAddToContacts = { onAddToContacts(person) },
+                    onOpenContact = { edit -> onOpenContact(person, edit) },
                     onRemove = { removing = person.address },
                 )
                 HorizontalDivider()
@@ -203,10 +206,11 @@ private fun MemberRow(
     onCall: () -> Unit,
     onAddToContacts: () -> Unit,
     onRemove: () -> Unit,
+    onOpenContact: (Boolean) -> Unit = {},
 ) {
     Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Initial(person.shownName)
+            Avatar(person.shownName, person.photo, size = 56)
             Column(Modifier.weight(1f)) {
                 Text(person.shownName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 if (blocked) {
@@ -220,7 +224,12 @@ private fun MemberRow(
             }
         }
         // Words, not bare icons, so every button says what it does.
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+        androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             // Screen readers hear whose button it is ("Text Becca"), not just "Text".
             val who = person.shownName
             OutlinedButton(onClick = onText, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Text $who" }) {
@@ -228,6 +237,14 @@ private fun MemberRow(
             }
             OutlinedButton(onClick = onCall, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Call $who" }) {
                 Text("Call", style = MaterialTheme.typography.titleSmall)
+            }
+            if (person.contact != null) {
+                OutlinedButton(onClick = { onOpenContact(false) }, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "View $who's contact" }) {
+                    Text("View contact", style = MaterialTheme.typography.titleSmall)
+                }
+                OutlinedButton(onClick = { onOpenContact(true) }, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Edit $who's contact" }) {
+                    Text("Edit contact", style = MaterialTheme.typography.titleSmall)
+                }
             }
             if (person.name == null) {
                 OutlinedButton(onClick = onAddToContacts, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Add $who to contacts" }) {

@@ -3,6 +3,7 @@ package io.github.secnewt.messages.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
@@ -83,6 +84,8 @@ fun ChatScreen(
     onDeleteMessage: ((Message) -> Unit)? = null,
 ) {
     var acting by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Message?>(null) }
+    var reactionsOf by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Message?>(null) }
+    reactionsOf?.let { message -> WhoReactedDialog(message) { reactionsOf = null } }
     acting?.let { message ->
         MessageActionsSheet(
             message,
@@ -133,6 +136,7 @@ fun ChatScreen(
                     message, showName = chat.isGroup, time = time(message.timeMillis),
                     onDownload = { onDownload(message) }, onOpenPicture = { viewing = it }, onSave = onSave,
                     onOptions = if (onReact != null || onDeleteMessage != null) ({ acting = message }) else null,
+                    onShowReactions = { reactionsOf = message },
                 )
             }
         }
@@ -148,6 +152,7 @@ private fun Bubble(
     onOpenPicture: (String) -> Unit,
     onSave: ((String, String, String) -> Unit)?,
     onOptions: (() -> Unit)? = null,
+    onShowReactions: () -> Unit = {},
 ) {
     // Long-press for react / copy / delete; screen readers get it as an action instead.
     val options = onOptions?.let { open -> listOf(androidx.compose.ui.semantics.CustomAccessibilityAction("Message options") { open(); true }) }
@@ -229,12 +234,16 @@ private fun Bubble(
                     modifier = Modifier.padding(top = 4.dp),
                 ) {
                     message.reactions.groupBy { it.emoji }.forEach { (emoji, list) ->
+                        // Tap to see who reacted.
                         Text(
                             if (list.size > 1) "$emoji ${list.size}" else emoji,
                             style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable(onClickLabel = "See who reacted", onClick = onShowReactions)
                                 .border(1.5.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
-                                .padding(horizontal = 8.dp, vertical = 2.dp),
+                                .heightIn(min = 36.dp)
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
                         )
                     }
                 }
@@ -386,4 +395,28 @@ private fun MessageActionsSheet(
             }
         }
     }
+}
+
+/** Who put which emoji on a message. */
+@Composable
+private fun WhoReactedDialog(message: Message, onClose: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Reactions") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                message.reactions.groupBy { it.emoji }.forEach { (emoji, list) ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(emoji, style = MaterialTheme.typography.headlineSmall)
+                        Text(list.joinToString(", ") { it.from?.shownName ?: "You" }, style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("Close", style = MaterialTheme.typography.titleMedium)
+            }
+        },
+    )
 }

@@ -212,6 +212,15 @@ class MainActivity : ComponentActivity() {
                 onBack = { showDetails = false },
                 onText = { person -> open(listOf(person.address)) },
                 onCall = { person -> startActivity(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", person.address, null))) },
+                onOpenContact = { person, edit ->
+                    person.contact?.let { uri ->
+                        val intent = Intent(if (edit) Intent.ACTION_EDIT else Intent.ACTION_VIEW, Uri.parse(uri))
+                            .putExtra("finishActivityOnSaveCompleted", true)
+                        runCatching { startActivity(intent) }.onFailure {
+                            Toast.makeText(this, "No contacts app could open it.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                },
                 onAddToContacts = { person ->
                     startActivity(
                         Intent(ContactsContract.Intents.Insert.ACTION).setType(ContactsContract.RawContacts.CONTENT_TYPE)

@@ -24,6 +24,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.runtime.getValue
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.semantics.liveRegion
@@ -343,7 +345,7 @@ private fun ChatRow(chat: Chat, time: String, picked: Boolean?, onLongPress: (()
                 Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
             }
         } else {
-            Initial(chat.title)
+            Avatar(chat.title, if (chat.isGroup) null else chat.people.firstOrNull()?.photo)
         }
         Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -387,6 +389,26 @@ private fun ChatRow(chat: Chat, time: String, picked: Boolean?, onLongPress: (()
                 }
             }
         }
+    }
+}
+
+/** A contact's photo when there is one, otherwise their first letter on their color. */
+@Composable
+fun Avatar(name: String, photo: String?, size: Int = 48) {
+    if (photo == null) return Initial(name, size)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val image by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, photo) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Pictures.thumbnail(context, photo, maxPx = 256) }
+    }
+    val loaded = image
+    if (loaded == null) {
+        Initial(name, size)
+    } else {
+        androidx.compose.foundation.Image(
+            loaded, contentDescription = null,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = Modifier.size(size.dp).clip(CircleShape),
+        )
     }
 }
 

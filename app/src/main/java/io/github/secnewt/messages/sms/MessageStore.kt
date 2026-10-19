@@ -22,7 +22,7 @@ import io.github.secnewt.messages.reactions.Reactions
 class MessageStore(private val context: Context) {
 
     private val resolver get() = context.contentResolver
-    private val names = mutableMapOf<String, String?>()
+    private val known = mutableMapOf<String, Person>()
     private val groupNames = GroupNames(context)
     private val chatSettings = io.github.secnewt.messages.settings.SettingsStore(context)
 
@@ -249,16 +249,20 @@ class MessageStore(private val context: Context) {
     /** The people in a chat. */
     fun people(threadId: Long): List<Person> = chats().firstOrNull { it.threadId == threadId }?.people.orEmpty()
 
-    fun person(address: String): Person = Person(address, name(address))
-
-    private fun name(address: String): String? = names.getOrPut(address) {
-        if (address.isBlank()) return@getOrPut null
+    fun person(address: String): Person = known.getOrPut(address) {
+        if (address.isBlank()) return@getOrPut Person(address)
         try {
             val uri = Uri.withAppendedPath(PhoneLookup.CONTENT_FILTER_URI, Uri.encode(address))
-            resolver.query(uri, arrayOf(PhoneLookup.DISPLAY_NAME), null, null, null)?.use { if (it.moveToFirst()) it.getString(0) else null }
+            resolver.query(
+                uri, arrayOf(PhoneLookup.DISPLAY_NAME, PhoneLookup.PHOTO_THUMBNAIL_URI, PhoneLookup._ID, PhoneLookup.LOOKUP_KEY), null, null, null,
+            )?.use {
+                if (!it.moveToFirst()) return@use null
+                val contact = android.provider.ContactsContract.Contacts.getLookupUri(it.getLong(2), it.getString(3))
+                Person(address, it.getString(0), it.getString(1), contact?.toString())
+            } ?: Person(address)
         } catch (e: Exception) {
             // No contacts access: show the number.
-            null
+            Person(address)
         }
     }
 
