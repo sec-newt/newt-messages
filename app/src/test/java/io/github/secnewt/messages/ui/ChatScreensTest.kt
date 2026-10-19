@@ -93,7 +93,7 @@ class ChatScreensTest {
     fun attachingAPicture() = composeRule.newtScreenshot("chat-attached-dark", dark = true) {
         ChatScreen(
             SampleChats.family, SampleChats.familyMessages, draft = "Look at this", onDraftChange = {}, onSend = {}, onBack = {},
-            time = SampleChats.time, onAttach = {}, attached = "1 picture",
+            time = SampleChats.time, onAttach = {}, attached = "photo.jpg, bulletin.pdf",
         )
     }
 
@@ -386,6 +386,23 @@ class ChatScreensTest {
         composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Edit contact"))
         composeRule.onNodeWithContentDescription("Edit Becca's contact").performClick()
         assertEquals("Becca" to true, opened)
+    }
+
+    @Test
+    fun theAttachMenuOffersEveryKind() {
+        var chosen: AttachKind? = null
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatScreen(
+                    SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
+                    time = SampleChats.time, onAttach = { chosen = it },
+                )
+            }
+        }
+        composeRule.onNodeWithContentDescription("Attach").performClick()
+        listOf("Photo or video", "Take a photo", "File").forEach { composeRule.onNodeWithText(it).assertIsDisplayed() }
+        composeRule.onNodeWithText("Contact card").performClick()
+        assertEquals(AttachKind.CONTACT, chosen)
     }
 
     @Test

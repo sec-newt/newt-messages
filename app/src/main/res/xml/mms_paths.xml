@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The only files the phone's MMS service may read or write: one folder in the app's cache. -->
+<!-- The only files shared out: one cache folder for the phone's MMS service, and one where the
+     camera app writes a photo you're about to send. Nothing else in the app is reachable. -->
 <paths>
     <cache-path name="mms" path="mms/" />
+    <cache-path name="camera" path="camera/" />
 </paths>

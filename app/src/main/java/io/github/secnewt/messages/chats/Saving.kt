@@ -46,13 +46,17 @@ object Saving {
         }
     }
 
+    /** Just the last part of a name, with only plain characters, nothing hidden, at most 80 long. */
+    fun cleanName(name: String): String =
+        name.substringAfterLast('/').substringAfterLast('\\')
+            .replace(Regex("[^A-Za-z0-9._ -]"), "_").trim('.', ' ').take(80)
+
     /**
      * A safe file name: no folders, nothing hidden, and an extension that matches the type.
      * Names come from whoever sent the message, so they're never trusted as paths.
      */
     fun fileName(name: String, type: String): String {
-        val base = name.substringAfterLast('/').substringAfterLast('\\')
-            .replace(Regex("[^A-Za-z0-9._ -]"), "_").trim('.', ' ').take(80).ifEmpty { "attachment" }
+        val base = cleanName(name).ifEmpty { "attachment" }
         val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(type)
             ?: when (type) {
                 "image/jpeg" -> "jpg"

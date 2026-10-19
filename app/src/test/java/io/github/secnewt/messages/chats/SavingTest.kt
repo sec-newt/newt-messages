@@ -17,5 +17,7 @@ class SavingTest {
         assertEquals("hidden.jpg", Saving.fileName(".hidden", "image/jpeg"))
         assertEquals("attachment.jpg", Saving.fileName("", "image/jpeg"))
         assertEquals("Mom_s card.vcf", Saving.fileName("Mom's card", "text/x-vcard"))
+        assertEquals("Becca Maples.vcf", Saving.cleanName("Becca Maples.vcf"))
+        assertEquals("evil.sh", Saving.cleanName("../../evil.sh"))
     }
 }

@@ -193,10 +193,21 @@ class MainActivity : ComponentActivity() {
             return
         }
         var draft by rememberSaveable(thread) { mutableStateOf(startDraft) }
-        // One picture at a time, picked with Android's photo picker (no photo permission needed).
-        var picture by rememberSaveable(thread) { mutableStateOf<String?>(null) }
-        val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-            if (uri != null) picture = uri.toString()
+        // Things to send with the words. Pictures come from Android's photo picker, files from
+        // its file picker, photos from the camera app: none of them needs a permission here.
+        var attachments by androidx.compose.runtime.remember(thread) { mutableStateOf(listOf<io.github.secnewt.messages.chats.Attachment>()) }
+        fun add(uri: Uri?, fallbackType: String, fallbackName: String) {
+            uri ?: return
+            attachments = attachments + describe(uri, fallbackType, fallbackName)
+        }
+        val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { add(it, "image/jpeg", "photo") }
+        val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { add(it, "application/octet-stream", "file") }
+        var cameraTarget by androidx.compose.runtime.remember { mutableStateOf<Uri?>(null) }
+        val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { taken ->
+            if (taken) cameraTarget?.let { attachments = attachments + io.github.secnewt.messages.chats.Attachment(it.toString(), "photo.jpg", "image/jpeg") }
+        }
+        val pickContactCard = rememberLauncherForActivityResult(ActivityResultContracts.PickContact()) { contact ->
+            contact?.let { contactCard(it) }?.let { attachments = attachments + it }
         }
         val messages by produceState(emptyList<Message>(), thread, version) { value = withContext(Dispatchers.IO) { store.messages(thread) } }
         LaunchedEffect(thread, version) {
@@ -265,49 +276,103 @@ class MainActivity : ComponentActivity() {
             onDraftChange = { draft = it },
             onSend = {
                 val text = draft.trim()
-                val attached = picture
-                if (text.isNotEmpty() || attached != null) {
+                val attached = attachments
+                if (text.isNotEmpty() || attached.isNotEmpty()) {
                     draft = ""
                     startDraft = ""
-                    picture = null
+                    attachments = emptyList()
                     Thread { send(chat, text, attached) }.start()
                 }
             },
             onBack = { openThread = null },
             time = ::time,
             onDownload = { message -> Thread { retry(message) }.start() },
-            onAttach = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-            attached = picture?.let { "1 picture" },
-            onRemoveAttachment = { picture = null },
+            onAttach = { kind ->
+                when (kind) {
+                    io.github.secnewt.messages.ui.AttachKind.MEDIA ->
+                        pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                    io.github.secnewt.messages.ui.AttachKind.CAMERA -> {
+                        val target = cameraFile()
+                        cameraTarget = target
+                        runCatching { takePhoto.launch(target) }.onFailure {
+                            Toast.makeText(this, "No camera app could take the photo.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    io.github.secnewt.messages.ui.AttachKind.FILE -> pickFile.launch(arrayOf("*/*"))
+                    io.github.secnewt.messages.ui.AttachKind.CONTACT -> pickContactCard.launch(null)
+                }
+            },
+            attached = attachments.takeIf { it.isNotEmpty() }?.joinToString(", ") { it.name },
+            onRemoveAttachment = { attachments = emptyList() },
             onSave = { uri, name, type -> Thread { save(uri, name, type) }.start() },
             onDetails = { showDetails = true },
             onReact = { message, emoji ->
                 // A reaction is an ordinary text in iPhone wording; it folds onto the message here too.
-                io.github.secnewt.messages.reactions.Reactions.reply(message, emoji)?.let { text -> Thread { send(chat, text, null) }.start() }
+                io.github.secnewt.messages.reactions.Reactions.reply(message, emoji)?.let { text -> Thread { send(chat, text) }.start() }
             },
             onDeleteMessage = { message -> Thread { MessageStore(this).deleteMessage(message.id) }.start() },
         )
     }
 
-    /** One-to-one words go as a text; groups and pictures go as a picture message (MMS). */
-    private fun send(chat: Chat, text: String, picture: String?) {
+    /** One-to-one words go as a text; groups and attachments go as a picture message (MMS). */
+    private fun send(chat: Chat, text: String, attachments: List<io.github.secnewt.messages.chats.Attachment> = emptyList()) {
         val to = chat.people.map { it.address }
-        if (!chat.isGroup && picture == null) {
+        if (!chat.isGroup && attachments.isEmpty()) {
             SmsSender.send(this, to.first(), text)
             return
         }
-        val images = picture?.let { uri ->
-            val limit = getSystemService(SmsManager::class.java).carrierConfigValues
-                .getInt(SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE, 300 * 1024)
-            // Leave room for the words and the message's own headers.
-            val bytes = Pictures.forSending(this, Uri.parse(uri), maxBytes = limit * 9 / 10 - text.length - 2048)
-            if (bytes == null) {
-                runOnUiThread { Toast.makeText(this, "That picture couldn't be made small enough to send.", Toast.LENGTH_LONG).show() }
-                return
-            }
-            listOf(bytes to "image/jpeg")
-        }.orEmpty()
-        Mms.send(this, to, text, images)
+        val limit = getSystemService(SmsManager::class.java).carrierConfigValues
+            .getInt(SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE, 300 * 1024)
+        // Leave room for the words and the message's own headers.
+        val room = limit * 9 / 10 - text.length - 2048
+        val pictures = attachments.count { it.type.startsWith("image/") }
+        val others = attachments.filterNot { it.type.startsWith("image/") }.map { file ->
+            val bytes = runCatching { contentResolver.openInputStream(Uri.parse(file.uri))?.use { it.readBytes() } }.getOrNull()
+            if (bytes == null) return complain("Couldn't read ${file.name}.")
+            Mms.Part(bytes, file.type, file.name)
+        }
+        val left = room - others.sumOf { it.bytes.size }
+        if (left < 0 || (pictures > 0 && left < 20_000 * pictures)) {
+            return complain("Too big for a picture message: your carrier allows about ${limit / 1024} KB in all.")
+        }
+        // Pictures are shrunk to share what's left.
+        val shrunk = attachments.filter { it.type.startsWith("image/") }.map { picture ->
+            val bytes = Pictures.forSending(this, Uri.parse(picture.uri), maxBytes = left / pictures)
+                ?: return complain("${picture.name} couldn't be made small enough to send.")
+            Mms.Part(bytes, "image/jpeg", picture.name.substringBeforeLast('.') + ".jpg")
+        }
+        Mms.send(this, to, text, shrunk + others)
+    }
+
+    private fun complain(text: String) {
+        runOnUiThread { Toast.makeText(this, text, Toast.LENGTH_LONG).show() }
+    }
+
+    /** An attachment's name and type, as the app that has it reports them. */
+    private fun describe(uri: Uri, fallbackType: String, fallbackName: String): io.github.secnewt.messages.chats.Attachment {
+        val type = contentResolver.getType(uri) ?: fallbackType
+        val name = runCatching {
+            contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { if (it.moveToFirst()) it.getString(0) else null }
+        }.getOrNull() ?: fallbackName
+        return io.github.secnewt.messages.chats.Attachment(uri.toString(), name, type)
+    }
+
+    /** A new file in cache/camera/ for the camera app to write a photo into. */
+    private fun cameraFile(): Uri {
+        val file = java.io.File(java.io.File(cacheDir, "camera").apply { mkdirs() }, "photo-${System.currentTimeMillis()}.jpg")
+        return androidx.core.content.FileProvider.getUriForFile(this, "$packageName.mmsfiles", file)
+    }
+
+    /** A contact as a standard vCard (.vcf), which any phone can open and save. */
+    private fun contactCard(contact: Uri): io.github.secnewt.messages.chats.Attachment? = try {
+        contentResolver.query(contact, arrayOf(ContactsContract.Contacts.LOOKUP_KEY, ContactsContract.Contacts.DISPLAY_NAME), null, null, null)?.use {
+            if (!it.moveToFirst()) return@use null
+            val card = Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_VCARD_URI, it.getString(0))
+            io.github.secnewt.messages.chats.Attachment(card.toString(), (it.getString(1) ?: "contact") + ".vcf", "text/x-vcard")
+        }
+    } catch (e: Exception) {
+        null
     }
 
     /** Every contact's phone numbers, for New message. Empty without contacts access. */
