@@ -75,7 +75,7 @@ tap() { # tap the element whose content-desc or text is $1
   adb shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))
   sleep 2
 }
-adb shell am start -W -a android.intent.action.SENDTO -d "smsto:5550111,5550122" \
+adb shell am start -W -a android.intent.action.SENDTO -d "smsto:5550111,5550122,5550133" \
   -n "$pkg/io.github.secnewt.messages.MainActivity" > /dev/null
 sleep 3
 tap "Group details"
@@ -89,12 +89,16 @@ adb pull /sdcard/ui.xml ui.xml > /dev/null
 grep -q 'text="Small group"' ui.xml || fail "After renaming, the group's name didn't show."
 echo "Renaming a group works."
 
-# Removing someone starts a new group with the others, which opens.
+# Removing someone starts a new group with the others (keeping the name), which opens.
+adb shell input swipe 540 1800 540 700
+sleep 1
 tap "Remove 5550122 from the group"
 tap "Start new group"
+tap "Group details"
 adb shell uiautomator dump /sdcard/ui.xml > /dev/null
 adb pull /sdcard/ui.xml ui.xml > /dev/null
-grep -q 'text="5550111"' ui.xml || { grep -o 'text="[^"]*"' ui.xml | head; fail "Removing someone didn't open the chat with the others."; }
+grep -q 'text="2 people, plus you"' ui.xml && grep -q 'text="Small group"' ui.xml && ! grep -q 'text="5550122"' ui.xml \
+  || { grep -o 'text="[^"]*"' ui.xml | head -20; fail "Removing someone didn't open a new group with the others."; }
 echo "Removing someone from a group works."
 
 adb logcat -d > after.log
