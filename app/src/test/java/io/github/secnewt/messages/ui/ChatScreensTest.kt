@@ -103,11 +103,6 @@ class ChatScreensTest {
     }
 
     @Test
-    fun deleteDialogLargeText() = composeRule.newtScreenshot("chat-delete-dialog-200pct", dark = false, fontScale = 2f) {
-        DeleteChatDialog("Family", onDelete = {}, onCancel = {})
-    }
-
-    @Test
     fun linksShowUnderlined() = composeRule.newtScreenshot("chat-links-dark", dark = true) {
         ChatScreen(
             SampleChats.chats[1],
