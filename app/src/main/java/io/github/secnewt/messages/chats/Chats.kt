@@ -37,6 +37,8 @@ data class Chat(
     val pinned: Boolean = false,
     /** A name I gave a group chat, like "Family". */
     val name: String? = null,
+    /** No notifications from this chat (messages still arrive and count as unread). */
+    val muted: Boolean = false,
 ) {
     val isGroup: Boolean get() = people.size > 1
     val title: String get() = name ?: people.joinToString(", ") { it.shownName }

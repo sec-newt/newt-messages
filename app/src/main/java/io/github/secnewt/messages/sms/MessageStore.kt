@@ -24,6 +24,7 @@ class MessageStore(private val context: Context) {
     private val resolver get() = context.contentResolver
     private val names = mutableMapOf<String, String?>()
     private val groupNames = GroupNames(context)
+    private val chatSettings = io.github.secnewt.messages.settings.SettingsStore(context)
 
     /** Every chat, newest first. */
     fun chats(): List<Chat> {
@@ -37,7 +38,7 @@ class MessageStore(private val context: Context) {
                     val people = c.getString(2).orEmpty().split(' ').mapNotNull { it.toLongOrNull()?.let(::address) }.map(::person)
                     if (people.isEmpty()) continue
                     val snippet = c.getString(3).orEmpty()
-                    add(Chat(id, people, shownSnippet(snippet), c.getLong(1), unread = unread[id] ?: 0, name = groupNames.name(id)))
+                    add(Chat(id, people, shownSnippet(snippet), c.getLong(1), unread = unread[id] ?: 0, name = groupNames.name(id), pinned = chatSettings.pinned(id), muted = chatSettings.muted(id)))
                 }
             }
         }.orEmpty()

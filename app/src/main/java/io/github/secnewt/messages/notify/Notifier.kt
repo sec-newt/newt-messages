@@ -17,6 +17,10 @@ import io.github.secnewt.messages.chats.Codes
 import io.github.secnewt.messages.chats.Message
 import io.github.secnewt.messages.chats.Person
 import io.github.secnewt.messages.reactions.ParsedReaction
+import io.github.secnewt.messages.settings.ReactionNotify
+import io.github.secnewt.messages.settings.SettingsStore
+import io.github.secnewt.messages.settings.Speaker
+import io.github.secnewt.messages.settings.Speaking
 import io.github.secnewt.messages.sms.MessageStore
 
 /**
@@ -26,6 +30,7 @@ import io.github.secnewt.messages.sms.MessageStore
 class Notifier(private val context: Context) {
 
     private val manager = NotificationManagerCompat.from(context)
+    private val settings = SettingsStore(context)
 
     init {
         val system = context.getSystemService(NotificationManager::class.java)
@@ -42,11 +47,18 @@ class Notifier(private val context: Context) {
     private fun allowed() =
         context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
-    /** Shows (or clears) a chat's notification from its unread texts. */
-    fun update(threadId: Long) {
+    /**
+     * Shows (or clears) a chat's notification from its unread texts. [announce] when a new
+     * message just arrived, to say who it's from (if that's turned on).
+     */
+    fun update(threadId: Long, announce: Boolean = false) {
         if (!allowed()) return
         val store = MessageStore(context)
         val unread = store.unreadTexts(threadId)
+        if (settings.muted(threadId)) {
+            manager.cancel(threadId.toInt())
+            return
+        }
         if (unread.isEmpty()) {
             manager.cancel(threadId.toInt())
             return
@@ -68,22 +80,31 @@ class Notifier(private val context: Context) {
         if (people.size == 1) builder.addAction(reply(threadId, people.first().address))
         Codes.find(unread.last().body)?.let { builder.addAction(copy(it)) }
         post(threadId.toInt(), builder.build())
+        if (announce) {
+            unread.last().from?.let { from ->
+                val group = if (people.size > 1) store.chats().firstOrNull { it.threadId == threadId }?.name ?: "a group" else null
+                Speaker.announce(context, Speaking.text(from.name, from.address, group))
+            }
+        }
     }
 
     /** "Becca ❤️ your message “Let's do lunch…”", quietly. */
     fun reaction(threadId: Long, from: Person, reaction: ParsedReaction, target: Message?) {
-        if (!allowed() || reaction.removed) return
+        if (!allowed() || reaction.removed || settings.muted(threadId)) return
+        val how = settings.settings().reactions
+        if (how == ReactionNotify.OFF) return
         val quote = (target?.body ?: reaction.quoted.removeSurrounding("\"")).let { if (it.length > 60) it.take(57) + "…" else it }
         val whose = if (target == null || target.mine) "your message" else "${target.from?.shownName}'s message"
         val text = "${from.shownName} ${reaction.emoji} $whose “$quote”"
-        val notification = NotificationCompat.Builder(context, CHANNEL_REACTIONS)
+        val channel = if (how == ReactionNotify.LIKE_A_TEXT) CHANNEL_MESSAGES else CHANNEL_REACTIONS
+        val notification = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle("${from.shownName} reacted ${reaction.emoji}")
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(open(threadId))
             .setAutoCancel(true)
-            .setSilent(true)
+            .setSilent(how != ReactionNotify.LIKE_A_TEXT)
             .build()
         post(REACTION_ID_OFFSET + threadId.toInt(), notification)
     }
