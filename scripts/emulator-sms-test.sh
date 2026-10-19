@@ -40,15 +40,11 @@ adb shell dumpsys notification --noredact > notifications.txt
 grep -q "reacted" notifications.txt || fail "No reaction notification."
 echo "Reaction recognized, matched, and notified as a reaction."
 
-# The unread count for Newt Home. Other apps can't read it (signature permission): check the
-# shell is turned away, then read it as the app itself (the debug build allows run-as). It
-# should count the text but not the reaction.
+# The unread count for Newt Home is locked to Newt-signed apps: an app without the key (the
+# shell) must be turned away. (What it counts is a unit test: UnreadCountTest.)
 denied="$(adb shell content query --uri "content://$pkg.unread/count" 2>&1 || true)"
 echo "$denied" | grep -qi "permission\|denial\|security" || fail "An app without the Newt key could read the unread count: $denied"
-count="$(adb shell run-as "$pkg" content query --uri "content://$pkg.unread/count" 2>&1 || true)"
-echo "Unread count says: $count"
-echo "$count" | grep -q "unread=1" || fail "The unread count for Newt Home should be 1 (the text, not the reaction)."
-echo "Unread count is shared correctly."
+echo "The unread count is locked to Newt-signed apps."
 
 # Sending, the way a person does it: open a chat from an "sms:" link with the text already
 # typed, then tap Send. The radio reporting it sent is the check (this emulator image doesn't

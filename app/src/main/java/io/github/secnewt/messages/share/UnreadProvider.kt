@@ -38,7 +38,7 @@ class UnreadProvider : ContentProvider() {
 
     override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? {
         if (uri.path != "/count") return null
-        return MatrixCursor(arrayOf(COLUMN)).apply { addRow(arrayOf(unread().coerceIn(0, 999))) }
+        return MatrixCursor(arrayOf(COLUMN)).apply { addRow(arrayOf(unread())) }
     }
 
     /** Unread texts that aren't reactions, plus unread picture and group messages. */
@@ -47,14 +47,10 @@ class UnreadProvider : ContentProvider() {
         return try {
             val texts = resolver.query(
                 Telephony.Sms.Inbox.CONTENT_URI, arrayOf(Telephony.Sms.BODY), "${Telephony.Sms.READ} = 0", null, null,
-            )?.use { c ->
-                var n = 0
-                while (c.moveToNext()) if (Reactions.parse(c.getString(0).orEmpty()) == null) n++
-                n
-            } ?: 0
+            )?.use { c -> buildList { while (c.moveToNext()) add(c.getString(0).orEmpty()) } }.orEmpty()
             val mms = resolver.query(Telephony.Mms.Inbox.CONTENT_URI, arrayOf(Telephony.Mms._ID), "${Telephony.Mms.READ} = 0", null, null)
                 ?.use { it.count } ?: 0
-            texts + mms
+            count(texts, mms)
         } catch (e: RuntimeException) {
             // Not the messaging app: nothing to count.
             0
@@ -68,6 +64,10 @@ class UnreadProvider : ContentProvider() {
 
     companion object {
         const val COLUMN = "unread"
+
+        /** Unread texts that aren't reactions, plus unread picture messages, capped at 999. */
+        fun count(unreadTexts: List<String>, unreadMms: Int): Int =
+            (unreadTexts.count { Reactions.parse(it) == null } + unreadMms).coerceIn(0, 999)
         fun countUri(packageName: String): Uri = Uri.parse("content://$packageName.unread/count")
     }
 }
