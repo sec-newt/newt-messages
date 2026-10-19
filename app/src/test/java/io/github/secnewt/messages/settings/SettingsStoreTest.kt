@@ -17,7 +17,7 @@ class SettingsStoreTest {
     private val store = SettingsStore(ApplicationProvider.getApplicationContext<Context>())
 
     @Test
-    fun `defaults: quiet reactions, not speaking`() {
+    fun `by default reactions are quiet and nothing is spoken`() {
         assertEquals(MessagesSettings(ReactionNotify.QUIET, SpeakMode.OFF, quietDuringDnd = true), store.settings())
     }
 
