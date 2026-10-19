@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.ui.text.withLink
 import androidx.compose.foundation.clickable
 import io.github.secnewt.messages.chats.Links
 import androidx.compose.runtime.setValue
