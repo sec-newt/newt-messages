@@ -125,10 +125,14 @@ class ChatScreensTest {
         }
         composeRule.onNodeWithText("Save").performClick()
         assertEquals("bulletin.pdf", saved)
-        // Opens the rename dialog with the current name, and saving passes it back.
+        // Opens the rename dialog with the current name, and saving passes it back. The name
+        // field's blinking cursor never stops, so the test clock is stepped by hand from here.
+        composeRule.mainClock.autoAdvance = false
         composeRule.onNodeWithContentDescription("Rename this group").performClick()
+        composeRule.mainClock.advanceTimeBy(500)
         composeRule.onNodeWithText("Name this group").assertIsDisplayed()
         composeRule.onNodeWithText("Save name").performClick()
+        composeRule.mainClock.advanceTimeBy(500)
         assertEquals("Family", renamed)
     }
 
