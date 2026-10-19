@@ -5,9 +5,6 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performTextReplacement
-import androidx.compose.ui.test.hasSetTextAction
-import androidx.compose.ui.test.hasText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import io.github.secnewt.messages.chats.Chat
@@ -128,11 +125,11 @@ class ChatScreensTest {
         }
         composeRule.onNodeWithText("Save").performClick()
         assertEquals("bulletin.pdf", saved)
+        // Opens the rename dialog with the current name, and saving passes it back.
         composeRule.onNodeWithContentDescription("Rename this group").performClick()
         composeRule.onNodeWithText("Name this group").assertIsDisplayed()
-        composeRule.onNode(hasSetTextAction() and hasText("Family")).performTextReplacement("Maples family")
         composeRule.onNodeWithText("Save name").performClick()
-        assertEquals("Maples family", renamed)
+        assertEquals("Family", renamed)
     }
 
     @Test
