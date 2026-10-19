@@ -40,6 +40,13 @@ adb shell dumpsys notification --noredact > notifications.txt
 grep -q "reacted" notifications.txt || fail "No reaction notification."
 echo "Reaction recognized, matched, and notified as a reaction."
 
+# The unread count for Newt Home: other apps can't read it (signature permission), but the
+# shell, which Android trusts, can, and it should count the text but not the reaction.
+count="$(adb shell content query --uri "content://$pkg.unread/count" 2>&1 || true)"
+echo "Unread count says: $count"
+echo "$count" | grep -q "unread=1" || fail "The unread count for Newt Home should be 1 (the text, not the reaction)."
+echo "Unread count is shared correctly."
+
 # Sending, the way a person does it: open a chat from an "sms:" link with the text already
 # typed, then tap Send. The radio reporting it sent is the check (this emulator image doesn't
 # reliably text its own number back, so that isn't required).

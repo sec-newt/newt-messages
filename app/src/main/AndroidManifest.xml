@@ -14,6 +14,14 @@
 
     <uses-feature android:name="android.hardware.telephony" android:required="true" />
 
+    <!-- Lets other apps signed with the Newt key (Newt Home) read how many messages are unread:
+         only the number. "signature" means Android grants it to no other app, and nobody is asked. -->
+    <permission
+        android:name="${applicationId}.permission.UNREAD_COUNT"
+        android:label="@string/unread_permission"
+        android:description="@string/unread_permission_description"
+        android:protectionLevel="signature" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -83,6 +91,14 @@
         <receiver android:name=".sms.SentReceiver" android:exported="false" />
         <receiver android:name=".notify.ActionReceiver" android:exported="false" />
         <receiver android:name=".mms.MmsResultReceiver" android:exported="false" />
+
+        <!-- The unread count for other Newt apps (see the permission above). Read-only. -->
+        <provider
+            android:name=".share.UnreadProvider"
+            android:authorities="${applicationId}.unread"
+            android:exported="true"
+            android:readPermission="${applicationId}.permission.UNREAD_COUNT"
+            android:writePermission="${applicationId}.permission.UNREAD_COUNT" />
 
         <!-- Hands one MMS file at a time to Android's MMS service (the phone process), which
              does the downloading and sending. Not exported; access is granted per file. -->
