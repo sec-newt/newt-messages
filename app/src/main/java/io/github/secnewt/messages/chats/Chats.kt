@@ -46,9 +46,14 @@ data class Chat(
     val name: String? = null,
     /** No notifications from this chat (messages still arrive and count as unread). */
     val muted: Boolean = false,
+    /** Each person's color here, by [ChatColors.key]; no two the same while there are enough. */
+    val colors: Map<String, PersonHue> = ChatColors.assign(people, emptyMap()),
 ) {
     val isGroup: Boolean get() = people.size > 1
     val title: String get() = name ?: people.joinToString(", ") { it.shownName }
+
+    /** Someone's color in this chat (someone no longer in it gets the color their name picks). */
+    fun hue(person: Person): PersonHue = colors[ChatColors.key(person.address)] ?: PersonHue.fromName(person.shownName)
 }
 
 /** The three tabs. */

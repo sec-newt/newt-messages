@@ -25,6 +25,7 @@ class MessageStore(private val context: Context) {
     private val known = java.util.concurrent.ConcurrentHashMap<String, Person>()
     private val groupNames = GroupNames(context)
     private val chatSettings = io.github.secnewt.messages.settings.SettingsStore(context)
+    private val personColors = io.github.secnewt.messages.chats.PersonColorStore(context)
 
     /** Every chat, newest first. */
     fun chats(): List<Chat> {
@@ -39,7 +40,7 @@ class MessageStore(private val context: Context) {
                     val people = c.getString(2).orEmpty().split(' ').mapNotNull { it.toLongOrNull()?.let(addresses::get) }.map(::person)
                     if (people.isEmpty()) continue
                     val snippet = c.getString(3).orEmpty()
-                    add(Chat(id, people, shownSnippet(snippet), c.getLong(1), unread = unread[id] ?: 0, name = groupNames.name(id), pinned = chatSettings.pinned(id), muted = chatSettings.muted(id)))
+                    add(Chat(id, people, shownSnippet(snippet), c.getLong(1), unread = unread[id] ?: 0, name = groupNames.name(id), pinned = chatSettings.pinned(id), muted = chatSettings.muted(id), colors = personColors.colors(id, people)))
                 }
             }
         }.orEmpty()
@@ -360,9 +361,6 @@ class MessageStore(private val context: Context) {
         val REAL_MMS = "${Telephony.Mms.MESSAGE_TYPE} IN (128, 130, 132)"
 
         /** Numbers compare by their last 10 digits, so "+1 (972) 555-0111" matches "9725550111". */
-        fun numberKey(number: String): String {
-            val digits = number.filter { it.isDigit() }
-            return if (digits.length >= 10) digits.takeLast(10) else number.trim().lowercase()
-        }
+        fun numberKey(number: String): String = io.github.secnewt.messages.chats.ChatColors.key(number)
     }
 }

@@ -156,7 +156,11 @@ class MainActivity : ComponentActivity() {
         val thread = openThread
         val chat = chats.firstOrNull { it.threadId == thread }
             ?: thread?.takeIf { startPeople.isNotEmpty() }?.let {
-                Chat(it, startPeople.map(store::person), "", System.currentTimeMillis(), name = GroupNames(this).name(it))
+                val people = startPeople.map(store::person)
+                Chat(
+                    it, people, "", System.currentTimeMillis(), name = GroupNames(this).name(it),
+                    colors = io.github.secnewt.messages.chats.PersonColorStore(this).colors(it, people),
+                )
             }
         if (showSettings) {
             BackHandler { showSettings = false }
@@ -285,6 +289,10 @@ class MainActivity : ComponentActivity() {
                 },
                 onMute = { on ->
                     io.github.secnewt.messages.settings.SettingsStore(this).setMuted(thread, on)
+                    version++
+                },
+                onPickColor = { person, hue, everyChat ->
+                    io.github.secnewt.messages.chats.PersonColorStore(this).pick(person, hue, if (everyChat) null else thread)
                     version++
                 },
             )

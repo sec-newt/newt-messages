@@ -14,6 +14,11 @@ import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
@@ -117,10 +122,52 @@ class ChatScreensTest {
         onDelete: () -> Unit = {},
         onNewMembers: (List<String>) -> Unit = {},
         onAddToContacts: (io.github.secnewt.messages.chats.Person) -> Unit = {},
+        onPickColor: (io.github.secnewt.messages.chats.Person, io.github.secnewt.messages.chats.PersonHue?, Boolean) -> Unit = { _, _, _ -> },
     ) = ChatDetailsScreen(
         chat, onBack = {}, onText = {}, onCall = {}, onAddToContacts = onAddToContacts, onRename = {},
-        onNewMembers = onNewMembers, onPickContact = {}, onDelete = onDelete,
+        onNewMembers = onNewMembers, onPickContact = {}, onDelete = onDelete, onPickColor = onPickColor,
     )
+
+    // Pastor Dave's and Sam's names pick the same teal; the chat gives them different colors.
+    private val church = @androidx.compose.runtime.Composable {
+        val chat = SampleChats.chats[4]
+        val messages = listOf(
+            io.github.secnewt.messages.chats.Message(1, "Small group moved to Thursday", 7 * SampleChats.HOUR, SampleChats.pastor),
+            io.github.secnewt.messages.chats.Message(2, "Works for me", 8 * SampleChats.HOUR, SampleChats.sam),
+            io.github.secnewt.messages.chats.Message(3, "I'll bring snacks", 9 * SampleChats.HOUR, SampleChats.becca),
+        )
+        ChatScreen(chat, messages, "", {}, {}, {}, SampleChats.time)
+    }
+    @Test fun clashingColorsAreToldApartDark() = composeRule.newtScreenshot("chat-church-dark", dark = true, content = church)
+    @Test fun clashingColorsAreToldApartLight() = composeRule.newtScreenshot("chat-church-light", dark = false, content = church)
+
+    private val picker = @androidx.compose.runtime.Composable {
+        androidx.compose.material3.Surface {
+            ColorPicker(
+                SampleChats.chats[4], SampleChats.pastor, onPick = { _, _ -> },
+                androidx.compose.ui.Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(24.dp),
+            )
+        }
+    }
+    @Test fun colorPickerDark() = composeRule.newtScreenshot("color-picker-dark", dark = true, content = picker)
+    @Test fun colorPickerLight() = composeRule.newtScreenshot("color-picker-light", dark = false, content = picker)
+    @Test fun colorPickerLargeText() = composeRule.newtScreenshot("color-picker-200pct", dark = false, fontScale = 2f, content = picker)
+
+    @Test
+    fun pickingAColorForJustThisGroup() {
+        var picked: Triple<String, io.github.secnewt.messages.chats.PersonHue?, Boolean>? = null
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                Details(chat = SampleChats.chats[4], onPickColor = { person, hue, every -> picked = Triple(person.shownName, hue, every) })
+            }
+        }
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("Change Pastor Dave's color", substring = true))
+        composeRule.onNodeWithContentDescription("Change Pastor Dave's color", substring = true).performClick()
+        // Sam keeps the teal both names pick, and the picker says so.
+        composeRule.onNodeWithText("Sam has this here").assertExists()
+        composeRule.onNodeWithText("Pink").performScrollTo().performClick()
+        assertEquals(Triple("Pastor Dave", io.github.secnewt.messages.chats.PersonHue.PINK, false), picked)
+    }
 
     @Test fun groupDetailsDark() = composeRule.newtScreenshot("group-details-dark", dark = true) { Details() }
     @Test fun groupDetailsLargeText() = composeRule.newtScreenshot("group-details-200pct", dark = false, fontScale = 2f) { Details() }
