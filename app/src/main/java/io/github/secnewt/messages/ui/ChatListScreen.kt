@@ -346,7 +346,7 @@ private fun ChatRow(chat: Chat, time: String, picked: Boolean?, onLongPress: (()
                 Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
             }
         } else {
-            Avatar(chat.title, if (chat.isGroup) null else chat.people.firstOrNull()?.photo)
+            Avatar(chat.title, if (chat.isGroup) null else chat.people.firstOrNull()?.photo, color = if (chat.isGroup) null else chat.people.firstOrNull()?.let(chat::hue)?.fill)
         }
         Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -395,15 +395,15 @@ private fun ChatRow(chat: Chat, time: String, picked: Boolean?, onLongPress: (()
 
 /** A contact's photo when there is one, otherwise their first letter on their color. */
 @Composable
-fun Avatar(name: String, photo: String?, size: Int = 48) {
-    if (photo == null) return Initial(name, size)
+fun Avatar(name: String, photo: String?, size: Int = 48, color: Color? = null) {
+    if (photo == null) return Initial(name, size, color)
     val context = androidx.compose.ui.platform.LocalContext.current
     val image by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, photo) {
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Pictures.thumbnail(context, photo, maxPx = 256) }
     }
     val loaded = image
     if (loaded == null) {
-        Initial(name, size)
+        Initial(name, size, color)
     } else {
         androidx.compose.foundation.Image(
             loaded, contentDescription = null,
@@ -415,10 +415,10 @@ fun Avatar(name: String, photo: String?, size: Int = 48) {
 
 /** A person's (or group's) first letter on their color. */
 @Composable
-fun Initial(name: String, size: Int = 48) {
+fun Initial(name: String, size: Int = 48, color: Color? = null) {
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier.size(size.dp).background(personColor(name), CircleShape),
+        modifier = Modifier.size(size.dp).background(color ?: personColor(name), CircleShape),
     ) {
         Text(
             name.firstOrNull { it.isLetterOrDigit() }?.uppercase() ?: "#",

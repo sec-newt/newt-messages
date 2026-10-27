@@ -11,7 +11,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -37,12 +42,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.github.secnewt.messages.chats.Chat
 import io.github.secnewt.messages.chats.Person
+import io.github.secnewt.messages.chats.PersonHue
 import io.github.secnewt.ui.ScreenHeader
 import io.github.secnewt.ui.neonFieldColors
 
 /**
- * Everything about a chat: who's in it (text, call, or save an unknown number to contacts),
- * the group's name, adding or removing people, and deleting the chat.
+ * Everything about a chat: who's in it (text, call, save an unknown number to contacts, or
+ * change their color), the group's name, adding or removing people, and deleting the chat.
  *
  * Group texts have no shared member list: each phone just has a list of numbers. So adding
  * or removing someone starts a new group with the new people, and the screen says so.
@@ -65,7 +71,18 @@ fun ChatDetailsScreen(
     onMute: (Boolean) -> Unit = {},
     isBlocked: (Person) -> Boolean = { false },
     onBlock: (Person, Boolean) -> Unit = { _, _ -> },
+    /** Pick someone's color (null: back to automatic), for every chat or just this one. */
+    onPickColor: (Person, PersonHue?, Boolean) -> Unit = { _, _, _ -> },
 ) {
+    var coloring by rememberSaveable { mutableStateOf<String?>(null) }
+    coloring?.let { address ->
+        val person = chat.people.first { it.address == address }
+        ColorDialog(
+            chat, person,
+            onPick = { hue, everyChat -> coloring = null; onPickColor(person, hue, everyChat) },
+            onCancel = { coloring = null },
+        )
+    }
     var blocking by rememberSaveable { mutableStateOf<String?>(null) }
     blocking?.let { address ->
         val person = chat.people.first { it.address == address }
@@ -160,6 +177,8 @@ fun ChatDetailsScreen(
                 val blocked = isBlocked(person)
                 MemberRow(
                     person,
+                    hue = chat.hue(person),
+                    onColor = { coloring = person.address },
                     blocked = blocked,
                     onBlock = { if (blocked) onBlock(person, false) else blocking = person.address },
                     canRemove = chat.people.size > 2,
@@ -200,6 +219,8 @@ fun ChatDetailsScreen(
 @Composable
 private fun MemberRow(
     person: Person,
+    hue: PersonHue,
+    onColor: () -> Unit,
     blocked: Boolean,
     onBlock: () -> Unit,
     canRemove: Boolean,
@@ -211,7 +232,7 @@ private fun MemberRow(
 ) {
     Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Avatar(person.shownName, person.photo, size = 56)
+            Avatar(person.shownName, person.photo, size = 56, color = hue.fill)
             Column(Modifier.weight(1f)) {
                 Text(person.shownName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 if (blocked) {
@@ -246,6 +267,13 @@ private fun MemberRow(
                 OutlinedButton(onClick = { onOpenContact(true) }, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Edit $who's contact" }) {
                     Text("Edit contact", style = MaterialTheme.typography.titleSmall)
                 }
+            }
+            OutlinedButton(
+                onClick = onColor,
+                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Change $who's color, now ${hue.label}" },
+            ) {
+                Swatch(hue, size = 20)
+                Text("Color: ${hue.label}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 8.dp))
             }
             if (person.name == null) {
                 OutlinedButton(onClick = onAddToContacts, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Add $who to contacts" }) {
@@ -317,4 +345,80 @@ private fun AddPersonDialog(onAdd: (String) -> Unit, onPickContact: ((String) ->
             TextButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel", style = MaterialTheme.typography.titleMedium) }
         },
     )
+}
+
+/** A dot of someone's color, as their bubble outline shows it in this theme. */
+@Composable
+private fun Swatch(hue: PersonHue, size: Int) {
+    androidx.compose.foundation.layout.Box(
+        Modifier.size(size.dp).background(hue.outline(), androidx.compose.foundation.shape.CircleShape),
+    )
+}
+
+/**
+ * Pick a color for someone. Each color says who else in this chat has it, so it's easy to keep
+ * everyone different; tapping one sets it right away.
+ */
+@Composable
+private fun ColorDialog(chat: Chat, person: Person, onPick: (PersonHue?, Boolean) -> Unit, onCancel: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("${person.shownName}'s color") },
+        text = { ColorPicker(chat, person, onPick, Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())) },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel", style = MaterialTheme.typography.titleMedium) }
+        },
+    )
+}
+
+/** The picker itself: where it applies, then every color with who else here has it. */
+@Composable
+internal fun ColorPicker(chat: Chat, person: Person, onPick: (PersonHue?, Boolean) -> Unit, modifier: Modifier = Modifier) {
+    // In a group, most often it's this group that needs telling apart.
+    var everyChat by rememberSaveable { mutableStateOf(!chat.isGroup) }
+    val current = chat.hue(person)
+    val others = chat.people.filter { it.address != person.address }.groupBy(chat::hue)
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("Where", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
+        Column(Modifier.selectableGroup()) {
+            Choice("Just this chat", null, selected = !everyChat) { everyChat = false }
+            Choice("Every chat", "Replaces colors picked for them in single chats.", selected = everyChat) { everyChat = true }
+        }
+        Text(
+            "Color", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(top = 8.dp).semantics { heading() },
+        )
+        Column(Modifier.selectableGroup()) {
+            Choice("Automatic", "A color nobody else in the chat has.", selected = false) { onPick(null, everyChat) }
+            PersonHue.entries.forEach { hue ->
+                val note = when {
+                    others[hue] != null -> "${others.getValue(hue).joinToString(", ") { it.shownName }} has this here"
+                    hue == PersonHue.MINE -> "Same as your messages"
+                    else -> null
+                }
+                Choice(hue.label, note, selected = hue == current, hue = hue) { onPick(hue, everyChat) }
+            }
+        }
+    }
+}
+
+/** One choice in a list: a big row with words, a dot of color when it's a color, and a check when it's the current one. */
+@Composable
+private fun Choice(label: String, note: String?, selected: Boolean, hue: PersonHue? = null, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .selectable(selected = selected, role = androidx.compose.ui.semantics.Role.RadioButton, onClick = onClick),
+    ) {
+        if (hue != null) Swatch(hue, size = 32) else androidx.compose.material3.RadioButton(selected = selected, onClick = null)
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+            if (note != null) Text(note, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (hue != null && selected) Text("✓ Now", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+    }
 }

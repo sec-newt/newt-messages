@@ -144,7 +144,7 @@ fun ChatScreen(
         ) {
             items(messages.asReversed(), key = { it.id }) { message ->
                 Bubble(
-                    message, showName = chat.isGroup, time = time(message.timeMillis),
+                    message, hue = message.from?.let(chat::hue), showName = chat.isGroup, time = time(message.timeMillis),
                     onDownload = { onDownload(message) }, onOpenPicture = { viewing = it }, onSave = onSave,
                     onOptions = if (onReact != null || onDeleteMessage != null) ({ acting = message }) else null,
                     onShowReactions = { reactionsOf = message },
@@ -157,6 +157,8 @@ fun ChatScreen(
 @Composable
 private fun Bubble(
     message: Message,
+    /** The sender's color in this chat; null for my own messages. */
+    hue: io.github.secnewt.messages.chats.PersonHue?,
     showName: Boolean,
     time: String,
     onDownload: () -> Unit,
@@ -171,7 +173,7 @@ private fun Bubble(
         if (message.reactions.isNotEmpty()) androidx.compose.ui.semantics.CustomAccessibilityAction("See who reacted") { onShowReactions(); true } else null,
     ).ifEmpty { null }
     val who = message.from?.shownName
-    val color = if (who == null) MaterialTheme.colorScheme.primary else personOutline(who)
+    val color = hue?.outline() ?: MaterialTheme.colorScheme.primary
     val reactions = message.reactions.joinToString(", ") { r -> "${r.emoji} from ${r.from?.shownName ?: "you"}" }
     val spoken = buildString {
         append(if (who == null) "You" else who)
