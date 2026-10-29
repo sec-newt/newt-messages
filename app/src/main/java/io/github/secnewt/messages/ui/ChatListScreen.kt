@@ -2,6 +2,8 @@ package io.github.secnewt.messages.ui
 
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -24,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.getValue
@@ -51,6 +54,7 @@ import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -199,11 +203,10 @@ enum class BulkAction(val label: String, val confirm: Boolean) {
     MARK_READ("Mark read", false), BLOCK("Block", true), DELETE("Delete", true),
 }
 
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun SelectionBar(picked: List<Chat>, onAction: (BulkAction) -> Unit, onCancel: () -> Unit) {
+internal fun SelectionBar(picked: List<Chat>, onAction: (BulkAction) -> Unit, onCancel: () -> Unit) {
     androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
-        Column(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Column(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     if (picked.size == 1) "1 chat picked" else "${picked.size} chats picked",
@@ -211,32 +214,58 @@ private fun SelectionBar(picked: List<Chat>, onAction: (BulkAction) -> Unit, onC
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
                 )
-                androidx.compose.material3.TextButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text("Done", style = MaterialTheme.typography.titleMedium)
-                }
+                BarIcon(Icons.Filled.Close, "Done", onClick = onCancel)
             }
-            // Wraps onto more lines at large text, so every action stays visible.
-            androidx.compose.foundation.layout.FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                val allPinned = picked.all { it.pinned }
-                val allMuted = picked.all { it.muted }
-                listOf(
-                    if (allPinned) BulkAction.UNPIN else BulkAction.PIN,
-                    if (allMuted) BulkAction.UNMUTE else BulkAction.MUTE,
-                    BulkAction.MARK_READ, BulkAction.BLOCK, BulkAction.DELETE,
-                ).forEach { action ->
-                    androidx.compose.material3.OutlinedButton(onClick = { onAction(action) }, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text(
-                            action.label,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = if (action.confirm) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
+            // Icons, not words: words at large text crowd the bar. Pin and Mute light up when
+            // every picked chat already is, and tapping them then undoes it.
+            val allPinned = picked.all { it.pinned }
+            val allMuted = picked.all { it.muted }
+            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                BarIcon(NewtIcons.Pin, if (allPinned) "Unpin" else "Pin", on = allPinned) { onAction(if (allPinned) BulkAction.UNPIN else BulkAction.PIN) }
+                BarIcon(NewtIcons.Muted, if (allMuted) "Unmute" else "Mute", on = allMuted) { onAction(if (allMuted) BulkAction.UNMUTE else BulkAction.MUTE) }
+                BarIcon(NewtIcons.MarkRead, "Mark read") { onAction(BulkAction.MARK_READ) }
+                BarIcon(NewtIcons.Block, "Block", danger = true) { onAction(BulkAction.BLOCK) }
+                BarIcon(NewtIcons.Delete, "Delete", danger = true) { onAction(BulkAction.DELETE) }
             }
         }
+    }
+}
+
+/**
+ * A big icon button in the house outline. [on] fills it with the blue-to-purple gradient;
+ * [danger] colors it red. Screen readers hear [description].
+ */
+@Composable
+private fun BarIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    on: Boolean = false,
+    danger: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+    val gradient = androidx.compose.ui.graphics.Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary))
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(56.dp)
+            .clip(shape)
+            .then(if (on) Modifier.background(gradient) else Modifier)
+            .border(
+                if (danger) androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.error) else io.github.secnewt.ui.neonOutline(),
+                shape,
+            )
+            .clickable(onClickLabel = description, role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
+            .semantics { contentDescription = description; if (on) stateDescription = "On" },
+    ) {
+        Icon(
+            icon, contentDescription = null, modifier = Modifier.size(28.dp),
+            tint = when {
+                on -> MaterialTheme.colorScheme.onPrimary
+                danger -> MaterialTheme.colorScheme.error
+                else -> MaterialTheme.colorScheme.primary
+            },
+        )
     }
 }
 
@@ -350,8 +379,12 @@ private fun ChatRow(chat: Chat, time: String, picked: Boolean?, onLongPress: (()
         }
         Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // Pin and mute as icons in the house colors, sized to the name beside them.
+                val mark = with(androidx.compose.ui.platform.LocalDensity.current) { MaterialTheme.typography.titleMedium.fontSize.toDp() }
+                if (chat.pinned) Icon(NewtIcons.Pin, contentDescription = null, tint = accent, modifier = Modifier.padding(end = 4.dp).size(mark))
+                if (chat.muted) Icon(NewtIcons.Muted, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 4.dp).size(mark))
                 Text(
-                    (if (chat.pinned) "📌 " else "") + (if (chat.muted) "🔕 " else "") + chat.title,
+                    chat.title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = if (unread) FontWeight.ExtraBold else FontWeight.Medium,
                     maxLines = 1,
