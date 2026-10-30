@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.performTextInput
@@ -79,6 +80,29 @@ class ChatScreensTest {
         }
         composeRule.onNodeWithContentDescription("Family, 1 unread", substring = true).assertIsDisplayed().performClick()
         assertEquals(4L, opened?.threadId)
+    }
+
+    private val withDraft = SampleChats.chats.map { if (it.threadId == 2L) it.copy(draft = "Sunday works, I'll call after") else it }
+
+    @Test
+    fun draftDark() = composeRule.newtScreenshot("chats-people-draft-dark", dark = true) {
+        ChatListScreen(withDraft, ChatTab.PEOPLE, onTab = {}, onOpen = {}, time = SampleChats.time)
+    }
+
+    @Test
+    fun draftLight() = composeRule.newtScreenshot("chats-people-draft-light", dark = false) {
+        ChatListScreen(withDraft, ChatTab.PEOPLE, onTab = {}, onOpen = {}, time = SampleChats.time)
+    }
+
+    @Test
+    fun anUnsentDraftShowsInsteadOfTheLastMessage() {
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatListScreen(withDraft, ChatTab.PEOPLE, onTab = {}, onOpen = {}, time = SampleChats.time)
+            }
+        }
+        composeRule.onNodeWithContentDescription("Draft: Sunday works, I'll call after", substring = true).assertIsDisplayed()
+        composeRule.onAllNodesWithText("Love you! Call me Sunday", substring = true).assertCountEquals(0)
     }
 
     @Test

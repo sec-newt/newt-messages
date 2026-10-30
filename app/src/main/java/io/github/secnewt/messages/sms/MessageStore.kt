@@ -24,6 +24,7 @@ class MessageStore(private val context: Context) {
     // Shared by the screens' background loads, so these caches must be safe across threads.
     private val known = java.util.concurrent.ConcurrentHashMap<String, Person>()
     private val groupNames = GroupNames(context)
+    private val drafts = io.github.secnewt.messages.chats.Drafts(context)
     private val chatSettings = io.github.secnewt.messages.settings.SettingsStore(context)
     private val personColors = io.github.secnewt.messages.chats.PersonColorStore(context)
 
@@ -40,7 +41,7 @@ class MessageStore(private val context: Context) {
                     val people = c.getString(2).orEmpty().split(' ').mapNotNull { it.toLongOrNull()?.let(addresses::get) }.map(::person)
                     if (people.isEmpty()) continue
                     val snippet = c.getString(3).orEmpty()
-                    add(Chat(id, people, shownSnippet(snippet), c.getLong(1), unread = unread[id] ?: 0, name = groupNames.name(id), pinned = chatSettings.pinned(id), muted = chatSettings.muted(id), colors = personColors.colors(id, people)))
+                    add(Chat(id, people, shownSnippet(snippet), c.getLong(1), unread = unread[id] ?: 0, name = groupNames.name(id), pinned = chatSettings.pinned(id), muted = chatSettings.muted(id), colors = personColors.colors(id, people), draft = drafts.draft(id)))
                 }
             }
         }.orEmpty()
