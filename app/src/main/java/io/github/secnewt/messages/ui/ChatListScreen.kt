@@ -58,6 +58,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import io.github.secnewt.messages.chats.Chat
 import io.github.secnewt.messages.chats.ChatSorting
@@ -339,7 +340,8 @@ private fun ChatRow(chat: Chat, time: String, picked: Boolean?, onLongPress: (()
         if (chat.pinned) append(", pinned")
         if (chat.muted) append(", muted")
         if (unread) append(", ${chat.unread} unread")
-        append(". ${chat.lastMessage}. $time")
+        if (chat.draft != null) append(". Draft: ${chat.draft}") else append(". ${chat.lastMessage}")
+        append(". $time")
     }
     val accent = MaterialTheme.colorScheme.primary
     Row(
@@ -400,7 +402,12 @@ private fun ChatRow(chat: Chat, time: String, picked: Boolean?, onLongPress: (()
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    chat.lastMessage,
+                    // An unsent draft shows instead of the last message, so it's easy to find again.
+                    if (chat.draft == null) androidx.compose.ui.text.AnnotatedString(chat.lastMessage)
+                    else androidx.compose.ui.text.buildAnnotatedString {
+                        withStyle(androidx.compose.ui.text.SpanStyle(color = accent, fontWeight = FontWeight.Bold)) { append("Draft: ") }
+                        append(chat.draft.lines().joinToString(" "))
+                    },
                     style = MaterialTheme.typography.bodyLarge,
                     color = if (unread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                     fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Normal,

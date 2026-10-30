@@ -150,7 +150,8 @@ class MainActivity : ComponentActivity() {
     private fun Messages() {
         val store = messageStore
         var tab by rememberSaveable { mutableStateOf(ChatTab.PEOPLE) }
-        val chats by produceState(lastChats, version) {
+        // Reloaded on leaving a chat too, so a draft left there shows in the list.
+        val chats by produceState(lastChats, version, openThread) {
             value = withContext(Dispatchers.IO) { store.chats() }.also { lastChats = it }
         }
         val thread = openThread
@@ -216,7 +217,9 @@ class MainActivity : ComponentActivity() {
             )
             return
         }
-        var draft by rememberSaveable(thread) { mutableStateOf(startDraft) }
+        val drafts = io.github.secnewt.messages.chats.Drafts(this)
+        // Words from an "sms:" link win over an old draft; otherwise pick up where I left off.
+        var draft by rememberSaveable(thread) { mutableStateOf(startDraft.ifEmpty { drafts.draft(thread).orEmpty() }) }
         // Things to send with the words. Pictures come from Android's photo picker, files from
         // its file picker, photos from the camera app: none of them needs a permission here.
         var attachments by androidx.compose.runtime.remember(thread) { mutableStateOf(listOf<io.github.secnewt.messages.chats.Attachment>()) }
@@ -301,12 +304,16 @@ class MainActivity : ComponentActivity() {
         BackHandler { openThread = null }
         ChatScreen(
             chat, messages, draft,
-            onDraftChange = { draft = it },
+            onDraftChange = {
+                draft = it
+                drafts.keep(thread, it)
+            },
             onSend = {
                 val text = draft.trim()
                 val attached = attachments
                 if (text.isNotEmpty() || attached.isNotEmpty()) {
                     draft = ""
+                    drafts.clear(thread)
                     startDraft = ""
                     attachments = emptyList()
                     Thread { send(chat, text, attached) }.start()
@@ -476,6 +483,7 @@ class MainActivity : ComponentActivity() {
 
     private fun delete(threadId: Long) {
         val removed = MessageStore(this).deleteChat(threadId)
+        io.github.secnewt.messages.chats.Drafts(this).clear(threadId)
         Notifier(this).cancel(threadId)
         android.util.Log.i("NewtSms", "Deleted a chat ($removed messages)")
     }

@@ -48,6 +48,8 @@ data class Chat(
     val muted: Boolean = false,
     /** Each person's color here, by [ChatColors.key]; no two the same while there are enough. */
     val colors: Map<String, PersonHue> = ChatColors.assign(people, emptyMap()),
+    /** Words I typed here and haven't sent yet. */
+    val draft: String? = null,
 ) {
     val isGroup: Boolean get() = people.size > 1
     val title: String get() = name ?: people.joinToString(", ") { it.shownName }

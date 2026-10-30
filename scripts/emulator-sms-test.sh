@@ -4,6 +4,7 @@
 #  2. an incoming reaction to it is stored as read and gets a quiet reaction notification,
 #     not a text one,
 #  3. typing a text and tapping Send sends it (the emulator texts itself back).
+#  (then more: renaming and changing a group, a new chat, the top bar, and drafts being kept).
 set -euo pipefail
 
 pkg="io.github.secnewt.messages.debug"
@@ -162,6 +163,28 @@ adb pull /sdcard/ui.xml ui.xml > /dev/null
 grep -q 'content-desc="Send"' ui.xml && grep -q 'text="5550177"' ui.xml \
   || { grep -o 'text="[^"]*"\|content-desc="[^"]*"' ui.xml | head -20; fail "New message didn't open a chat with the typed number."; }
 echo "Starting a new chat works."
+
+# Drafts: type in a chat without sending, leave it, and the list shows the draft; open the
+# chat again and the words are still there.
+adb shell am start -W -a android.intent.action.SENDTO -d smsto:5550111 \
+  -n "$pkg/io.github.secnewt.messages.MainActivity" > /dev/null
+sleep 3
+tap "Message"
+adb shell input text "Pick%sup%sbread"
+sleep 1
+tap "Back"
+adb shell uiautomator dump /sdcard/ui.xml > /dev/null
+adb pull /sdcard/ui.xml ui.xml > /dev/null
+grep -q 'content-desc="[^"]*Draft: Pick up bread' ui.xml \
+  || { grep -o 'content-desc="[^"]*"' ui.xml | head -20; fail "After leaving a chat with unsent words, the list didn't show the draft."; }
+adb shell am start -W -a android.intent.action.SENDTO -d smsto:5550111 \
+  -n "$pkg/io.github.secnewt.messages.MainActivity" > /dev/null
+sleep 3
+adb shell uiautomator dump /sdcard/ui.xml > /dev/null
+adb pull /sdcard/ui.xml ui.xml > /dev/null
+grep -q 'text="Pick up bread"' ui.xml \
+  || { grep -o 'text="[^"]*"' ui.xml | head -20; fail "Opening the chat again didn't bring back the draft."; }
+echo "Drafts are kept."
 
 adb logcat -d > after.log
 if grep -q "FATAL EXCEPTION" after.log; then
