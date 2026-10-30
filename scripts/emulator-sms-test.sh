@@ -165,8 +165,9 @@ grep -q 'content-desc="Send"' ui.xml && grep -q 'text="5550177"' ui.xml \
 echo "Starting a new chat works."
 
 # Drafts: type in a chat without sending, leave it, and the list shows the draft; open the
-# chat again and the words are still there.
-adb shell am start -W -a android.intent.action.SENDTO -d smsto:5550111 \
+# chat again and the words are still there. (A full number: short ones like 5550111 count as
+# automated senders and sit in the Codes tab, not People.)
+adb shell am start -W -a android.intent.action.SENDTO -d smsto:15555215554 \
   -n "$pkg/io.github.secnewt.messages.MainActivity" > /dev/null
 sleep 3
 tap "Message"
@@ -177,7 +178,7 @@ adb shell uiautomator dump /sdcard/ui.xml > /dev/null
 adb pull /sdcard/ui.xml ui.xml > /dev/null
 grep -q 'content-desc="[^"]*Draft: Pick up bread' ui.xml \
   || { grep -o 'content-desc="[^"]*"' ui.xml | head -20; fail "After leaving a chat with unsent words, the list didn't show the draft."; }
-adb shell am start -W -a android.intent.action.SENDTO -d smsto:5550111 \
+adb shell am start -W -a android.intent.action.SENDTO -d smsto:15555215554 \
   -n "$pkg/io.github.secnewt.messages.MainActivity" > /dev/null
 sleep 3
 adb shell uiautomator dump /sdcard/ui.xml > /dev/null
