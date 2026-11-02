@@ -158,13 +158,25 @@ class MainActivity : ComponentActivity() {
             listOfNotNull(androidx.core.content.IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
         }
         val fallback = intent.type?.takeIf { '*' !in it } ?: "application/octet-stream"
-        shared = streams.map { describe(it, fallback, "file") }
+        shared = streams.filter(::safeToShare).map { describe(it, fallback, "file") }
         sharedText = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
         if (shared.isEmpty() && sharedText.isBlank()) return
         openThread = null
         newChat = false
         showSettings = false
         showDetails = false
+    }
+
+    /**
+     * Only files the sharing app could hand over itself. As the messaging app, Newt can read the
+     * message store and contacts, so a share pointing there (or at Newt's own files, or a raw
+     * file path) could slip private data into a message; those are dropped.
+     */
+    private fun safeToShare(uri: Uri): Boolean {
+        if (uri.scheme != android.content.ContentResolver.SCHEME_CONTENT) return false
+        val authority = uri.authority ?: return false
+        val off = setOf("sms", "mms", "mms-sms", "com.android.contacts", "contacts", "call_log", "$packageName.mmsfiles", "$packageName.unread")
+        return authority.substringAfterLast('@') !in off && !authority.startsWith("$packageName.")
     }
 
     @androidx.compose.runtime.Composable
