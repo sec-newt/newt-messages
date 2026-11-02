@@ -188,7 +188,7 @@ class MainActivity : ComponentActivity() {
         // A provider locked behind a permission Newt holds (messages, contacts…) isn't the
         // sharing app's to hand over: Newt would be reading it on their behalf.
         val path = uri.path.orEmpty()
-        val needs = listOfNotNull(provider.readPermission ?: provider.permission) +
+        val needs = listOfNotNull(provider.readPermission) +
             provider.pathPermissions.orEmpty().filter { it.match(path) }.mapNotNull { it.readPermission }
         return needs.none { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
     }
