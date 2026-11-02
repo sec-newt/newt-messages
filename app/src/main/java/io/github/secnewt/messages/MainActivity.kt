@@ -174,18 +174,23 @@ class MainActivity : ComponentActivity() {
      */
     private fun safeToShare(uri: Uri): Boolean {
         if (uri.scheme != android.content.ContentResolver.SCHEME_CONTENT) return false
-        val authority = uri.authority?.substringAfterLast('@')?.lowercase() ?: return false
+        val authority = uri.authority?.substringAfterLast('@') ?: return false
         // Providers that guard themselves in code rather than with a declared permission.
-        val off = setOf("sms", "mms", "mms-sms", "icc", "com.android.contacts", "contacts", "call_log", "com.android.blockednumber")
-        if (authority in off) return false
+        val off = setOf(
+            "sms", "mms", "mms-sms", "icc", "com.android.contacts", "contacts", "call_log",
+            "com.android.blockednumber", "com.android.simphonebook",
+        )
+        if (authority.lowercase() in off) return false
         // An app Android hides from Newt can only reach it through the share's own grant; the
         // providers that matter here are system ones, which are always visible.
         val provider = packageManager.resolveContentProvider(authority, 0) ?: return true
         if (provider.packageName == packageName) return false
         // A provider locked behind a permission Newt holds (messages, contacts…) isn't the
         // sharing app's to hand over: Newt would be reading it on their behalf.
-        val needs = provider.readPermission ?: provider.permission ?: return true
-        return checkSelfPermission(needs) != PackageManager.PERMISSION_GRANTED
+        val path = uri.path.orEmpty()
+        val needs = listOfNotNull(provider.readPermission ?: provider.permission) +
+            provider.pathPermissions.orEmpty().filter { it.match(path) }.mapNotNull { it.readPermission }
+        return needs.none { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
     }
 
     @androidx.compose.runtime.Composable
