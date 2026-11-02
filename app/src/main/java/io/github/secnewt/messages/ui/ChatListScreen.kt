@@ -102,6 +102,9 @@ fun ChatListScreen(
     hits: List<io.github.secnewt.messages.chats.SearchHit> = emptyList(),
     /** What to do with the chats picked by long-press. Null hides selecting. */
     onBulk: ((BulkAction, List<Chat>) -> Unit)? = null,
+    /** Something shared from another app ("Send a picture to…"); tapping a chat takes it there. */
+    sharing: String? = null,
+    onCancelShare: () -> Unit = {},
 ) {
     // Chats picked by long-press; while any are picked, taps add or remove instead of opening.
     var picked by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(listOf<Long>()) }
@@ -147,6 +150,7 @@ fun ChatListScreen(
         Column(Modifier.fillMaxSize().padding(padding)) {
             Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
                 if (!selecting) TabHeader(if (searching) "Search" else tab.label, onOpenSettings)
+                if (sharing != null && !selecting) ShareBanner(sharing, onCancelShare)
                 if (onQuery != null && !selecting) {
                     androidx.compose.material3.OutlinedTextField(
                         value = query,
@@ -502,6 +506,27 @@ private fun ChatTabBar(chats: List<Chat>, selected: ChatTab, onSelect: (ChatTab)
                     unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 ),
             )
+        }
+    }
+}
+
+/** "Send a picture to…" over the chat list, so it's clear a tap on a chat sends there. */
+@Composable
+private fun ShareBanner(label: String, onCancel: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .background(MaterialTheme.colorScheme.primaryContainer, androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+    ) {
+        Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+            Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+            Text("Tap a chat, or New message", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
+        }
+        androidx.compose.material3.TextButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("Cancel", style = MaterialTheme.typography.titleMedium)
         }
     }
 }

@@ -71,6 +71,9 @@ class MainActivity : ComponentActivity() {
         picked = null
     }
     private var startDraft by mutableStateOf("")
+    // Pictures, videos or words shared from another app, waiting for me to pick a chat.
+    private var shared by mutableStateOf<List<io.github.secnewt.messages.chats.Attachment>>(emptyList())
+    private var sharedText by mutableStateOf("")
     // Who an "sms:" link was for, so a brand-new chat (no messages yet) can still open.
     private var startPeople by mutableStateOf<List<String>>(emptyList())
     private val changes = object : ContentObserver(Handler(Looper.getMainLooper())) {
@@ -130,9 +133,10 @@ class MainActivity : ComponentActivity() {
 
     private fun isMessagingApp(): Boolean = getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_SMS)
 
-    /** Opens a chat from a notification, or from an "sms:" link another app sent. */
+    /** Opens a chat from a notification, or from an "sms:" link another app sent; or takes a share. */
     private fun handle(intent: Intent?) {
         intent ?: return
+        if (intent.action in setOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE) && intent.data == null) return takeShare(intent)
         val thread = intent.getLongExtra(EXTRA_THREAD, -1)
         if (thread >= 0) {
             openThread = thread
@@ -144,6 +148,49 @@ class MainActivity : ComponentActivity() {
         startPeople = address.split(',', ';').map { it.trim() }.filter { it.isNotEmpty() }
         openThread = Telephony.Threads.getOrCreateThreadId(this, startPeople.toSet())
         startDraft = intent.getStringExtra("sms_body") ?: intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
+    }
+
+    /** A share from another app: keep what came, then show the chat list to pick where it goes. */
+    private fun takeShare(intent: Intent) {
+        val streams = if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
+            androidx.core.content.IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+        } else {
+            listOfNotNull(androidx.core.content.IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
+        }
+        val fallback = intent.type?.takeIf { '*' !in it } ?: "application/octet-stream"
+        shared = streams.filter(::safeToShare).map { describe(it, fallback, "file") }
+        sharedText = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
+        if (shared.isEmpty() && sharedText.isBlank()) return
+        openThread = null
+        newChat = false
+        showSettings = false
+        showDetails = false
+    }
+
+    /**
+     * Only files the sharing app could hand over itself. As the messaging app, Newt can read the
+     * message store and contacts, so a share pointing there (or at Newt's own files, or a raw
+     * file path) could slip private data into a message; those are dropped.
+     */
+    private fun safeToShare(uri: Uri): Boolean {
+        if (uri.scheme != android.content.ContentResolver.SCHEME_CONTENT) return false
+        val authority = uri.authority?.substringAfterLast('@') ?: return false
+        // Providers that guard themselves in code rather than with a declared permission.
+        val off = setOf(
+            "sms", "mms", "mms-sms", "icc", "com.android.contacts", "contacts", "call_log",
+            "com.android.blockednumber", "com.android.simphonebook",
+        )
+        if (authority.lowercase() in off) return false
+        // An app Android hides from Newt can only reach it through the share's own grant; the
+        // providers that matter here are system ones, which are always visible.
+        val provider = packageManager.resolveContentProvider(authority, 0) ?: return true
+        if (provider.packageName == packageName) return false
+        // A provider locked behind a permission Newt holds (messages, contacts…) isn't the
+        // sharing app's to hand over: Newt would be reading it on their behalf.
+        val path = uri.path.orEmpty()
+        val needs = listOfNotNull(provider.readPermission) +
+            provider.pathPermissions.orEmpty().filter { it.match(path) }.mapNotNull { it.readPermission }
+        return needs.none { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
     }
 
     @androidx.compose.runtime.Composable
@@ -206,8 +253,12 @@ class MainActivity : ComponentActivity() {
             val hits by produceState(emptyList<io.github.secnewt.messages.chats.SearchHit>(), query, version) {
                 value = if (query.isBlank()) emptyList() else withContext(Dispatchers.IO) { store.search(query) }
             }
+            val sharing = shared.isNotEmpty() || sharedText.isNotBlank()
+            if (sharing) BackHandler { shared = emptyList(); sharedText = "" }
             ChatListScreen(
                 chats, tab, onTab = { tab = it }, onOpen = { openThread = it.threadId }, time = ::time,
+                sharing = if (sharing) io.github.secnewt.messages.chats.Sharing.label(shared, sharedText) else null,
+                onCancelShare = { shared = emptyList(); sharedText = "" },
                 onNewChat = { newChat = true },
                 onBulk = { action, picked -> Thread { bulk(action, picked) }.start() },
                 onOpenSettings = { showSettings = true },
@@ -219,10 +270,19 @@ class MainActivity : ComponentActivity() {
         }
         val drafts = io.github.secnewt.messages.chats.Drafts(this)
         // Words from an "sms:" link win over an old draft; otherwise pick up where I left off.
-        var draft by rememberSaveable(thread) { mutableStateOf(startDraft.ifEmpty { drafts.draft(thread).orEmpty() }) }
+        // A share's words go in too, after anything already typed.
+        var draft by rememberSaveable(thread) {
+            val typed = startDraft.ifEmpty { drafts.draft(thread).orEmpty() }
+            mutableStateOf(listOf(typed, sharedText).filter { it.isNotBlank() }.joinToString(" "))
+        }
         // Things to send with the words. Pictures come from Android's photo picker, files from
         // its file picker, photos from the camera app: none of them needs a permission here.
-        var attachments by androidx.compose.runtime.remember(thread) { mutableStateOf(listOf<io.github.secnewt.messages.chats.Attachment>()) }
+        var attachments by androidx.compose.runtime.remember(thread) { mutableStateOf(shared) }
+        // What was shared now sits in this chat, ready to send; it doesn't follow me to the next one.
+        LaunchedEffect(thread) {
+            shared = emptyList()
+            sharedText = ""
+        }
         fun add(uri: Uri?, fallbackType: String, fallbackName: String) {
             uri ?: return
             attachments = attachments + describe(uri, fallbackType, fallbackName)

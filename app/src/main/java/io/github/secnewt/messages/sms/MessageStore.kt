@@ -9,6 +9,7 @@ import io.github.secnewt.messages.chats.Chat
 import io.github.secnewt.messages.chats.GroupNames
 import io.github.secnewt.messages.chats.Message
 import io.github.secnewt.messages.chats.Person
+import io.github.secnewt.messages.chats.Previews
 import io.github.secnewt.messages.reactions.Folding
 import io.github.secnewt.messages.reactions.Reactions
 
@@ -40,8 +41,8 @@ class MessageStore(private val context: Context) {
                     val id = c.getLong(0)
                     val people = c.getString(2).orEmpty().split(' ').mapNotNull { it.toLongOrNull()?.let(addresses::get) }.map(::person)
                     if (people.isEmpty()) continue
-                    val snippet = c.getString(3).orEmpty()
-                    add(Chat(id, people, shownSnippet(snippet), c.getLong(1), unread = unread[id] ?: 0, name = groupNames.name(id), pinned = chatSettings.pinned(id), muted = chatSettings.muted(id), colors = personColors.colors(id, people), draft = drafts.draft(id)))
+                    val shown = Previews.fromSummary(c.getString(3).orEmpty()) ?: Previews.of(raw(id, limit = 1).lastOrNull())
+                    add(Chat(id, people, shown, c.getLong(1), unread = unread[id] ?: 0, name = groupNames.name(id), pinned = chatSettings.pinned(id), muted = chatSettings.muted(id), colors = personColors.colors(id, people), draft = drafts.draft(id)))
                 }
             }
         }.orEmpty()
@@ -326,10 +327,6 @@ class MessageStore(private val context: Context) {
         }
         return counts
     }
-
-    /** The chat list shows a reaction as "❤️ to “…”", not the raw text. */
-    private fun shownSnippet(snippet: String): String =
-        Reactions.parse(snippet)?.let(Folding::orphanText) ?: snippet.ifBlank { "📷 Picture" }
 
     /**
      * How many unread messages show in the chat list, all chats together. Newt Home shows the
