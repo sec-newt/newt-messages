@@ -1,5 +1,13 @@
 package io.github.secnewt.messages.ui
 
+import io.github.secnewt.ui.NewtSteps
+import io.github.secnewt.ui.NewtStep
+import io.github.secnewt.ui.NewtStepState
+import io.github.secnewt.ui.NewtPrimaryButton
+import io.github.secnewt.ui.NewtSettingsCard
+import io.github.secnewt.ui.NewtInfo
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,7 +27,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import io.github.secnewt.messages.R
 
-/** Shown until Newt Messages is the phone's messaging app, with the button to make it so. */
+/**
+ * Shown until Newt Messages is the phone's messaging app: numbered steps with the button on the
+ * current one, and what stays the same underneath.
+ */
 @Composable
 fun WelcomeScreen(onMakeDefault: () -> Unit = {}) {
     Scaffold { padding ->
@@ -28,30 +39,40 @@ fun WelcomeScreen(onMakeDefault: () -> Unit = {}) {
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text(
                 text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.semantics { heading() },
             )
-            Text(
-                text = "Texts, picture messages and group chats. Your messages stay in Android's shared " +
-                    "message store, so switching apps loses nothing.",
-                style = MaterialTheme.typography.bodyLarge,
+            Text("Texts, picture messages and group chats, in big clear type.", style = MaterialTheme.typography.bodyLarge)
+            NewtSteps(
+                listOf(
+                    NewtStep(
+                        "Make Newt Messages your messaging app",
+                        NewtStepState.Now,
+                        hint = "Android asks you to confirm.",
+                        action = { NewtPrimaryButton("Make it my messaging app", onClick = onMakeDefault, modifier = Modifier.fillMaxWidth()) },
+                    ),
+                    NewtStep("Allow notifications", NewtStepState.ToDo, hint = "Android asks right after."),
+                    NewtStep("Open a chat", NewtStepState.ToDo, hint = "Your texts are already here."),
+                ),
             )
-            Text(
-                text = "Still new: keep your old messaging app installed. To switch back, open Settings → " +
-                    "Apps → Default apps → SMS app and pick it again.",
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            androidx.compose.material3.Button(
-                onClick = onMakeDefault,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-            ) {
-                Text("Make Newt Messages my messaging app", style = MaterialTheme.typography.titleMedium)
+            NewtSettingsCard("What stays the same", icon = Icons.Filled.Check) {
+                Text(
+                    "Your messages stay in Android's shared message store, so switching apps loses nothing.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                )
+                NewtInfo(
+                    "Keep your old messaging app installed while this is new. To switch back, open Settings → Apps → " +
+                        "Default apps → SMS app and pick it again.",
+                    label = "Switching back",
+                )
             }
         }
     }

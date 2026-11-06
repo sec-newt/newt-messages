@@ -29,6 +29,11 @@ import io.github.secnewt.messages.chats.Chat
 import io.github.secnewt.messages.chats.ChatTab
 import io.github.secnewt.test.newtScreenshot
 import org.junit.Assert.assertEquals
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsOff
+import io.github.secnewt.ui.NewtTheme
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -187,11 +192,11 @@ class ChatScreensTest {
                 Details(chat = SampleChats.chats[4], onPickColor = { person, hue, every -> picked = Triple(person.shownName, hue, every) })
             }
         }
-        composeRule.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("Change Pastor Dave's color", substring = true))
+        openMore("Pastor Dave")
         composeRule.onNodeWithContentDescription("Change Pastor Dave's color", substring = true).performClick()
         // Sam keeps the teal both names pick, and the picker says so.
-        composeRule.onNodeWithText("Sam has this here").assertExists()
-        composeRule.onNodeWithText("Pink").performScrollTo().performClick()
+        composeRule.onNodeWithContentDescription("Teal, Sam has it", substring = true).assertExists()
+        composeRule.onNodeWithContentDescription("Pink", substring = true).performScrollTo().performClick()
         assertEquals(Triple("Pastor Dave", io.github.secnewt.messages.chats.PersonHue.PINK, false), picked)
     }
 
@@ -202,8 +207,8 @@ class ChatScreensTest {
     fun removingSomeoneStartsANewGroup() {
         var members: List<String>? = null
         composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { Details(onNewMembers = { members = it }) } }
-        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Remove Sam from the group"))
-        composeRule.onNodeWithText("Remove Sam from the group").performClick()
+        openMore("Sam")
+        composeRule.onNodeWithText("Remove from group").performClick()
         composeRule.onNodeWithText("Start new group").performClick()
         assertEquals(listOf("+19725550111", "+19725550144", "+14695550199"), members)
     }
@@ -212,7 +217,7 @@ class ChatScreensTest {
     fun unknownNumbersCanBeAddedToContacts() {
         var added: String? = null
         composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { Details(onAddToContacts = { added = it.address }) } }
-        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Add to contacts"))
+        openMore("+14695550199")
         composeRule.onNodeWithText("Add to contacts").performClick()
         assertEquals("+14695550199", added)
     }
@@ -380,7 +385,7 @@ class ChatScreensTest {
                 )
             }
         }
-        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Block Sam"))
+        openMore("Sam")
         composeRule.onNodeWithText("Block Sam").performClick()
         composeRule.onNodeWithText("Block Sam?").assertIsDisplayed()
         composeRule.onNodeWithText("Block").performClick()
@@ -466,7 +471,7 @@ class ChatScreensTest {
                 )
             }
         }
-        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Edit contact"))
+        openMore("Becca")
         composeRule.onNodeWithContentDescription("Edit Becca's contact").performClick()
         assertEquals("Becca" to true, opened)
     }
@@ -600,5 +605,107 @@ class ChatScreensTest {
             ))
         // Still read-only: the words never change.
         composeRule.onNodeWithText("Dr. Lee's office is 214-555-1234, open till 5").assertIsDisplayed()
+    }
+
+    private fun settingsScreen(onChange: (io.github.secnewt.messages.settings.MessagesSettings) -> Unit = {}) = composeRule.setContent {
+        NewtTheme(darkTheme = true) {
+            SettingsScreen(io.github.secnewt.messages.settings.MessagesSettings(), onChange = onChange, onBack = {})
+        }
+    }
+
+    @Test
+    fun settingsOnlyTheChosenReactionShowsItsHint() {
+        settingsScreen()
+        composeRule.onNodeWithText("A quiet notification like \"Becca ❤️ your message\"", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("With sound, like any message", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun settingsSayWhoIsMessagingIsAThreeWayChoice() {
+        var changed: io.github.secnewt.messages.settings.MessagesSettings? = null
+        settingsScreen { changed = it }
+        composeRule.onNodeWithText("Headphones").performScrollTo().performClick()
+        assertEquals(io.github.secnewt.messages.settings.SpeakMode.HEADPHONES_ONLY, changed?.speak)
+    }
+
+    @Test
+    fun settingsSwitchesSayOnOrOff() {
+        settingsScreen()
+        composeRule.onNodeWithText("Quiet in Do Not Disturb").performScrollTo().assertIsOn()
+        composeRule.onNodeWithText("Read the message too").performScrollTo().assertIsOff()
+    }
+
+    /** Opens someone's ⋯ menu in Group details. */
+    private fun openMore(name: String) {
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("More for $name"))
+        composeRule.onNodeWithContentDescription("More for $name").performClick()
+    }
+
+    @Test
+    fun groupDetailsWritesEachColorAndHidesDangerBehindMore() {
+        composeRule.setContent { NewtTheme(darkTheme = true) { Details() } }
+        composeRule.onNodeWithText("Yellow · +19725550111", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("Block Becca").assertDoesNotExist()
+        composeRule.onNodeWithText("Remove from group").assertDoesNotExist()
+        openMore("Becca")
+        composeRule.onNodeWithText("Block Becca").assertExists()
+        composeRule.onNodeWithText("Remove from group").assertExists()
+    }
+
+    @Test
+    fun colorPickerIsAGridOfNamedSwatches() {
+        var picked: Pair<io.github.secnewt.messages.chats.PersonHue?, Boolean>? = null
+        composeRule.setContent {
+            NewtTheme(darkTheme = true) {
+                androidx.compose.material3.Surface {
+                    ColorPicker(
+                        SampleChats.chats[4], SampleChats.pastor, onPick = { h, e -> picked = h to e },
+                        androidx.compose.ui.Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                    )
+                }
+            }
+        }
+        // Where is a two-way choice; the current color says so.
+        composeRule.onNodeWithText("This chat").assertIsSelected()
+        composeRule.onNode(hasContentDescription("now", substring = true) and hasContentDescription(SampleChats.chats[4].hue(SampleChats.pastor).label, substring = true)).assertIsSelected()
+        composeRule.onNodeWithText("Every chat").performClick()
+        composeRule.onNodeWithContentDescription("Lime", substring = true).performScrollTo().performClick()
+        assertEquals(io.github.secnewt.messages.chats.PersonHue.LIME to true, picked)
+    }
+
+    private fun showChat(chat: io.github.secnewt.messages.chats.Chat, messages: List<io.github.secnewt.messages.chats.Message>) =
+        composeRule.setContent {
+            NewtTheme(darkTheme = true) {
+                ChatScreen(chat, messages, draft = "", onDraftChange = {}, onSend = {}, onBack = {}, time = SampleChats.time)
+            }
+        }
+
+    @Test
+    fun groupHeaderCountsPeople() {
+        showChat(SampleChats.family, SampleChats.familyMessages)
+        composeRule.onNodeWithText("${SampleChats.family.people.size} people").assertExists()
+    }
+
+    @Test
+    fun aOneToOneChatHasNoSenderNames() {
+        val becca = SampleChats.becca
+        showChat(SampleChats.chats[0], listOf(io.github.secnewt.messages.chats.Message(1, "Can you grab milk?", 0, becca)))
+        // Just the header: no name over the bubble.
+        composeRule.onAllNodesWithText("Becca", useUnmergedTree = true).assertCountEquals(1)
+    }
+
+    @Test
+    fun myMessagesUseTheGradientsTextColor() {
+        showChat(SampleChats.family, SampleChats.familyMessages)
+        val node = composeRule.onNodeWithText("I can do the brisket", useUnmergedTree = true).fetchSemanticsNode()
+        val results = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        node.config[androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult].action?.invoke(results)
+        assertEquals(androidx.compose.ui.graphics.Color(0xFF0A0B10), results.single().layoutInput.style.color)
+    }
+
+    @Test
+    fun theComposerIsTall() {
+        showChat(SampleChats.family, SampleChats.familyMessages)
+        composeRule.onNodeWithContentDescription("Send").assertHeightIsAtLeast(58.dp)
     }
 }

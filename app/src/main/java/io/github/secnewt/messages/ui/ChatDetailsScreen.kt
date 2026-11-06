@@ -1,5 +1,40 @@
 package io.github.secnewt.messages.ui
 
+import io.github.secnewt.ui.NewtChoice
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.onClick
+import io.github.secnewt.ui.NewtButton
+import io.github.secnewt.ui.NewtPrimaryButton
+import io.github.secnewt.ui.NewtTone
+import io.github.secnewt.ui.NewtStateChip
+import io.github.secnewt.ui.NewtSettingsCard
+import io.github.secnewt.ui.NewtSwitchRow
+import io.github.secnewt.ui.newtStripe
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -152,26 +187,21 @@ fun ChatDetailsScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (chat.isGroup) {
-                item {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Name", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        if (chat.isGroup) {
                             Text(chat.name ?: "No name yet", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         }
-                        OutlinedButton(onClick = { renaming = true }, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text("Rename", style = MaterialTheme.typography.titleMedium)
-                        }
+                        Text(
+                            if (chat.isGroup) "${chat.people.size} people, plus you" else "With",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.semantics { heading() },
+                        )
                     }
+                    if (chat.isGroup) NewtButton("Rename", onClick = { renaming = true }, icon = Icons.Filled.Edit)
                 }
-            }
-            item {
-                Text(
-                    if (chat.isGroup) "${chat.people.size} people, plus you" else "With",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.semantics { heading() },
-                )
             }
             items(chat.people, key = { it.address }) { person ->
                 val blocked = isBlocked(person)
@@ -188,34 +218,47 @@ fun ChatDetailsScreen(
                     onOpenContact = { edit -> onOpenContact(person, edit) },
                     onRemove = { removing = person.address },
                 )
-                HorizontalDivider()
             }
-            item { Toggle("Pin to top", "Keep this chat at the top of its tab.", chat.pinned, onPin) }
-            item { Toggle("Mute this chat", "No notifications from it. Messages still arrive and count as unread.", chat.muted, onMute) }
             item {
-                Button(onClick = { adding = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                    Text(if (chat.isGroup) "Add someone" else "Add someone (starts a group)", style = MaterialTheme.typography.titleMedium)
+                NewtSettingsCard("This chat", icon = Icons.Filled.Settings) {
+                    NewtSwitchRow("Pin to top", chat.pinned, onPin, hint = "At the top of its tab")
+                    NewtSwitchRow("Mute this chat", chat.muted, onMute, hint = "Messages still arrive")
                 }
+            }
+            item {
+                NewtPrimaryButton(
+                    if (chat.isGroup) "Add someone" else "Add someone (starts a group)",
+                    onClick = { adding = true },
+                    icon = Icons.Filled.Add,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
             if (chat.isGroup) {
                 item {
                     Text(
-                        "Adding or removing someone starts a new group with the new people. Group texts have " +
-                            "no shared member list, so this chat stays as it is.",
+                        "Adding or removing someone starts a new group; this chat stays as it is.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
             item {
-                OutlinedButton(onClick = { deleting = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(top = 8.dp)) {
-                    Text("Delete this chat", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
-                }
+                NewtPrimaryButton(
+                    "Delete this chat",
+                    onClick = { deleting = true },
+                    icon = Icons.Filled.Delete,
+                    tone = NewtTone.Danger,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
             }
         }
     }
 }
 
+/**
+ * One person in the chat, on a card striped in their color with the color's name written out.
+ * Text and Call are worded buttons; everything else, including Block and Remove, is behind ⋯.
+ */
 @Composable
 private fun MemberRow(
     person: Person,
@@ -230,67 +273,72 @@ private fun MemberRow(
     onRemove: () -> Unit,
     onOpenContact: (Boolean) -> Unit = {},
 ) {
-    Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val who = person.shownName
+    val shape = RoundedCornerShape(16.dp)
+    var menu by rememberSaveable { mutableStateOf(false) }
+    Column(
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .border(2.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+            .newtStripe(hue.outline(), tint = false)
+            .padding(start = 18.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Avatar(person.shownName, person.photo, size = 56, color = hue.fill)
+            Avatar(who, person.photo, size = 48, color = hue.fill)
             Column(Modifier.weight(1f)) {
-                Text(person.shownName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                if (blocked) {
-                    Text("Blocked", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
-                }
-                if (person.name != null) {
-                    Text(person.address, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    Text("Not in your contacts", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                Text(who, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "${hue.label} · ${if (person.name != null) person.address else "not in your contacts"}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (blocked) NewtStateChip("Blocked", NewtTone.Danger, modifier = Modifier.padding(top = 4.dp))
             }
         }
-        // Words, not bare icons, so every button says what it does.
-        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-        androidx.compose.foundation.layout.FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            // Screen readers hear whose button it is ("Text Becca"), not just "Text".
-            val who = person.shownName
-            OutlinedButton(onClick = onText, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Text $who" }) {
-                Text("Text", style = MaterialTheme.typography.titleSmall)
-            }
-            OutlinedButton(onClick = onCall, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Call $who" }) {
-                Text("Call", style = MaterialTheme.typography.titleSmall)
-            }
-            if (person.contact != null) {
-                OutlinedButton(onClick = { onOpenContact(false) }, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "View $who's contact" }) {
-                    Text("View contact", style = MaterialTheme.typography.titleSmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.height(IntrinsicSize.Min)) {
+            NewtButton("Text", onClick = onText, modifier = Modifier.weight(1f).fillMaxHeight().semantics { contentDescription = "Text $who" })
+            NewtButton("Call", onClick = onCall, modifier = Modifier.weight(1f).fillMaxHeight().semantics { contentDescription = "Call $who" })
+            Box {
+                OutlinedIconButton(
+                    onClick = { menu = true },
+                    border = BorderStroke(2.5.dp, MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.size(58.dp).semantics { contentDescription = "More for $who" },
+                ) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = null)
                 }
-                OutlinedButton(onClick = { onOpenContact(true) }, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Edit $who's contact" }) {
-                    Text("Edit contact", style = MaterialTheme.typography.titleSmall)
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    @Composable
+                    fun item(text: String, icon: ImageVector?, spoken: String? = null, danger: Boolean = false, action: () -> Unit) =
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                                )
+                            },
+                            leadingIcon = {
+                                if (icon != null) {
+                                    Icon(icon, contentDescription = null, tint = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                                } else {
+                                    Swatch(hue, size = 22)
+                                }
+                            },
+                            onClick = { menu = false; action() },
+                            modifier = Modifier.heightIn(min = 56.dp).then(if (spoken != null) Modifier.semantics { contentDescription = spoken } else Modifier),
+                        )
+                    if (person.contact != null) {
+                        item("View contact", Icons.Filled.Person, "View $who's contact") { onOpenContact(false) }
+                        item("Edit contact", Icons.Filled.Edit, "Edit $who's contact") { onOpenContact(true) }
+                    }
+                    if (person.name == null) item("Add to contacts", Icons.Filled.Add, "Add $who to contacts", action = onAddToContacts)
+                    item("Change color", null, "Change $who's color, now ${hue.label}", action = onColor)
+                    if (canRemove) item("Remove from group", Icons.Filled.Close, danger = true, action = onRemove)
+                    item(if (blocked) "Unblock $who" else "Block $who", Icons.Filled.Warning, danger = !blocked, action = onBlock)
                 }
-            }
-            OutlinedButton(
-                onClick = onColor,
-                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Change $who's color, now ${hue.label}" },
-            ) {
-                Swatch(hue, size = 20)
-                Text("Color: ${hue.label}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 8.dp))
-            }
-            if (person.name == null) {
-                OutlinedButton(onClick = onAddToContacts, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Add $who to contacts" }) {
-                    Text("Add to contacts", style = MaterialTheme.typography.titleSmall)
-                }
-            }
-        }
-        TextButton(onClick = onBlock, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text(
-                if (blocked) "Unblock ${person.shownName}" else "Block ${person.shownName}",
-                style = MaterialTheme.typography.titleSmall,
-                color = if (blocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-            )
-        }
-        if (canRemove) {
-            TextButton(onClick = onRemove, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text("Remove ${person.shownName} from the group", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.error)
             }
         }
     }
@@ -372,53 +420,84 @@ private fun ColorDialog(chat: Chat, person: Person, onPick: (PersonHue?, Boolean
     )
 }
 
-/** The picker itself: where it applies, then every color with who else here has it. */
+/**
+ * The picker itself: where it applies (this chat or every chat), then a grid of named swatches.
+ * Each swatch says who else here has it, and the current one has a thick ring and a ✓.
+ */
 @Composable
 internal fun ColorPicker(chat: Chat, person: Person, onPick: (PersonHue?, Boolean) -> Unit, modifier: Modifier = Modifier) {
     // In a group, most often it's this group that needs telling apart.
     var everyChat by rememberSaveable { mutableStateOf(!chat.isGroup) }
     val current = chat.hue(person)
     val others = chat.people.filter { it.address != person.address }.groupBy(chat::hue)
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("Where", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
-        Column(Modifier.selectableGroup()) {
-            Choice("Just this chat", null, selected = !everyChat) { everyChat = false }
-            Choice("Every chat", "Replaces colors picked for them in single chats.", selected = everyChat) { everyChat = true }
-        }
-        Text(
-            "Color", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(top = 8.dp).semantics { heading() },
+    // Three to a row while names fit; two at large text.
+    val perRow = if (LocalDensity.current.fontScale > 1.3f) 2 else 3
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        NewtChoice(
+            options = listOf(false, true),
+            selected = everyChat,
+            label = { if (it) "Every chat" else "This chat" },
+            onSelect = { everyChat = it },
+            explanation = if (everyChat) "Replaces colors picked for them in single chats" else null,
         )
-        Column(Modifier.selectableGroup()) {
-            Choice("Automatic", "A color nobody else in the chat has.", selected = false) { onPick(null, everyChat) }
-            PersonHue.entries.forEach { hue ->
-                val note = when {
-                    others[hue] != null -> "${others.getValue(hue).joinToString(", ") { it.shownName }} has this here"
-                    hue == PersonHue.MINE -> "Same as your messages"
-                    else -> null
+        val tiles: List<PersonHue?> = listOf(null) + PersonHue.entries
+        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            tiles.chunked(perRow).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.height(IntrinsicSize.Min)) {
+                    row.forEach { hue ->
+                        val who = when {
+                            hue == null -> null
+                            others[hue] != null -> others.getValue(hue).joinToString(", ") { it.shownName }
+                            hue == PersonHue.MINE -> "You"
+                            else -> null
+                        }
+                        SwatchTile(hue, who, selected = hue == current, modifier = Modifier.weight(1f).fillMaxHeight()) { onPick(hue, everyChat) }
+                    }
+                    repeat(perRow - row.size) { Box(Modifier.weight(1f)) }
                 }
-                Choice(hue.label, note, selected = hue == current, hue = hue) { onPick(hue, everyChat) }
             }
         }
     }
 }
 
-/** One choice in a list: a big row with words, a dot of color when it's a color, and a check when it's the current one. */
+/** One color: a block of it, its name, and who here has it. Automatic is a neutral block. */
 @Composable
-private fun Choice(label: String, note: String?, selected: Boolean, hue: PersonHue? = null, onClick: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .selectable(selected = selected, role = androidx.compose.ui.semantics.Role.RadioButton, onClick = onClick),
+private fun SwatchTile(hue: PersonHue?, who: String?, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    val name = hue?.label ?: "Automatic"
+    val spoken = listOfNotNull(name, who?.let { if (it == "You") "same as your messages" else "$it has it" }, if (selected) "now" else null).joinToString(", ")
+    Column(
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .border(if (selected) 3.dp else 2.dp, if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outlineVariant, shape)
+            .selectable(selected = selected, role = androidx.compose.ui.semantics.Role.RadioButton, onClick = onClick)
+            .clearAndSetSemantics {
+                contentDescription = spoken
+                this.selected = selected
+                role = androidx.compose.ui.semantics.Role.RadioButton
+                onClick { onClick(); true }
+            }
+            .padding(8.dp),
     ) {
-        if (hue != null) Swatch(hue, size = 32) else androidx.compose.material3.RadioButton(selected = selected, onClick = null)
-        Column(Modifier.weight(1f)) {
-            Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
-            if (note != null) Text(note, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(36.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(hue?.outline() ?: MaterialTheme.colorScheme.surfaceVariant),
+        )
+        Text(
+            if (selected) "✓ $name" else name,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        if (who != null) {
+            Text(who, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
-        if (hue != null && selected) Text("✓ Now", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
     }
 }
