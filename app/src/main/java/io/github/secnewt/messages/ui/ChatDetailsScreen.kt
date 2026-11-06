@@ -1,5 +1,11 @@
 package io.github.secnewt.messages.ui
 
+import io.github.secnewt.ui.NewtChoice
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.onClick
 import io.github.secnewt.ui.NewtButton
 import io.github.secnewt.ui.NewtPrimaryButton
 import io.github.secnewt.ui.NewtTone
@@ -414,53 +420,84 @@ private fun ColorDialog(chat: Chat, person: Person, onPick: (PersonHue?, Boolean
     )
 }
 
-/** The picker itself: where it applies, then every color with who else here has it. */
+/**
+ * The picker itself: where it applies (this chat or every chat), then a grid of named swatches.
+ * Each swatch says who else here has it, and the current one has a thick ring and a ✓.
+ */
 @Composable
 internal fun ColorPicker(chat: Chat, person: Person, onPick: (PersonHue?, Boolean) -> Unit, modifier: Modifier = Modifier) {
     // In a group, most often it's this group that needs telling apart.
     var everyChat by rememberSaveable { mutableStateOf(!chat.isGroup) }
     val current = chat.hue(person)
     val others = chat.people.filter { it.address != person.address }.groupBy(chat::hue)
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("Where", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
-        Column(Modifier.selectableGroup()) {
-            Choice("Just this chat", null, selected = !everyChat) { everyChat = false }
-            Choice("Every chat", "Replaces colors picked for them in single chats.", selected = everyChat) { everyChat = true }
-        }
-        Text(
-            "Color", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(top = 8.dp).semantics { heading() },
+    // Three to a row while names fit; two at large text.
+    val perRow = if (LocalDensity.current.fontScale > 1.3f) 2 else 3
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        NewtChoice(
+            options = listOf(false, true),
+            selected = everyChat,
+            label = { if (it) "Every chat" else "This chat" },
+            onSelect = { everyChat = it },
+            explanation = if (everyChat) "Replaces colors picked for them in single chats" else null,
         )
-        Column(Modifier.selectableGroup()) {
-            Choice("Automatic", "A color nobody else in the chat has.", selected = false) { onPick(null, everyChat) }
-            PersonHue.entries.forEach { hue ->
-                val note = when {
-                    others[hue] != null -> "${others.getValue(hue).joinToString(", ") { it.shownName }} has this here"
-                    hue == PersonHue.MINE -> "Same as your messages"
-                    else -> null
+        val tiles: List<PersonHue?> = listOf(null) + PersonHue.entries
+        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            tiles.chunked(perRow).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.height(IntrinsicSize.Min)) {
+                    row.forEach { hue ->
+                        val who = when {
+                            hue == null -> null
+                            others[hue] != null -> others.getValue(hue).joinToString(", ") { it.shownName }
+                            hue == PersonHue.MINE -> "You"
+                            else -> null
+                        }
+                        SwatchTile(hue, who, selected = hue == current, modifier = Modifier.weight(1f).fillMaxHeight()) { onPick(hue, everyChat) }
+                    }
+                    repeat(perRow - row.size) { Box(Modifier.weight(1f)) }
                 }
-                Choice(hue.label, note, selected = hue == current, hue = hue) { onPick(hue, everyChat) }
             }
         }
     }
 }
 
-/** One choice in a list: a big row with words, a dot of color when it's a color, and a check when it's the current one. */
+/** One color: a block of it, its name, and who here has it. Automatic is a neutral block. */
 @Composable
-private fun Choice(label: String, note: String?, selected: Boolean, hue: PersonHue? = null, onClick: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .selectable(selected = selected, role = androidx.compose.ui.semantics.Role.RadioButton, onClick = onClick),
+private fun SwatchTile(hue: PersonHue?, who: String?, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    val name = hue?.label ?: "Automatic"
+    val spoken = listOfNotNull(name, who?.let { if (it == "You") "same as your messages" else "$it has it" }, if (selected) "now" else null).joinToString(", ")
+    Column(
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .border(if (selected) 3.dp else 2.dp, if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outlineVariant, shape)
+            .selectable(selected = selected, role = androidx.compose.ui.semantics.Role.RadioButton, onClick = onClick)
+            .clearAndSetSemantics {
+                contentDescription = spoken
+                this.selected = selected
+                role = androidx.compose.ui.semantics.Role.RadioButton
+                onClick { onClick(); true }
+            }
+            .padding(8.dp),
     ) {
-        if (hue != null) Swatch(hue, size = 32) else androidx.compose.material3.RadioButton(selected = selected, onClick = null)
-        Column(Modifier.weight(1f)) {
-            Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
-            if (note != null) Text(note, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(36.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(hue?.outline() ?: MaterialTheme.colorScheme.surfaceVariant),
+        )
+        Text(
+            if (selected) "✓ $name" else name,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        if (who != null) {
+            Text(who, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
-        if (hue != null && selected) Text("✓ Now", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
     }
 }

@@ -32,6 +32,7 @@ import org.junit.Assert.assertEquals
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsOff
 import io.github.secnewt.ui.NewtTheme
+import androidx.compose.ui.test.assertIsSelected
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -193,8 +194,8 @@ class ChatScreensTest {
         openMore("Pastor Dave")
         composeRule.onNodeWithContentDescription("Change Pastor Dave's color", substring = true).performClick()
         // Sam keeps the teal both names pick, and the picker says so.
-        composeRule.onNodeWithText("Sam has this here").assertExists()
-        composeRule.onNodeWithText("Pink").performScrollTo().performClick()
+        composeRule.onNodeWithContentDescription("Teal, Sam has it", substring = true).assertExists()
+        composeRule.onNodeWithContentDescription("Pink", substring = true).performScrollTo().performClick()
         assertEquals(Triple("Pastor Dave", io.github.secnewt.messages.chats.PersonHue.PINK, false), picked)
     }
 
@@ -648,5 +649,26 @@ class ChatScreensTest {
         openMore("Becca")
         composeRule.onNodeWithText("Block Becca").assertExists()
         composeRule.onNodeWithText("Remove from group").assertExists()
+    }
+
+    @Test
+    fun colorPickerIsAGridOfNamedSwatches() {
+        var picked: Pair<io.github.secnewt.messages.chats.PersonHue?, Boolean>? = null
+        composeRule.setContent {
+            NewtTheme(darkTheme = true) {
+                androidx.compose.material3.Surface {
+                    ColorPicker(
+                        SampleChats.chats[4], SampleChats.pastor, onPick = { h, e -> picked = h to e },
+                        androidx.compose.ui.Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                    )
+                }
+            }
+        }
+        // Where is a two-way choice; the current color says so.
+        composeRule.onNodeWithText("This chat").assertIsSelected()
+        composeRule.onNode(hasContentDescription("now", substring = true) and hasContentDescription(SampleChats.chats[4].hue(SampleChats.pastor).label, substring = true)).assertIsSelected()
+        composeRule.onNodeWithText("Every chat").performClick()
+        composeRule.onNodeWithContentDescription("Lime", substring = true).performScrollTo().performClick()
+        assertEquals(io.github.secnewt.messages.chats.PersonHue.LIME to true, picked)
     }
 }
