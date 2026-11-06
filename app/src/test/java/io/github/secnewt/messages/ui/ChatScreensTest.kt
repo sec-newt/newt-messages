@@ -33,6 +33,7 @@ import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsOff
 import io.github.secnewt.ui.NewtTheme
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -670,5 +671,41 @@ class ChatScreensTest {
         composeRule.onNodeWithText("Every chat").performClick()
         composeRule.onNodeWithContentDescription("Lime", substring = true).performScrollTo().performClick()
         assertEquals(io.github.secnewt.messages.chats.PersonHue.LIME to true, picked)
+    }
+
+    private fun showChat(chat: io.github.secnewt.messages.chats.Chat, messages: List<io.github.secnewt.messages.chats.Message>) =
+        composeRule.setContent {
+            NewtTheme(darkTheme = true) {
+                ChatScreen(chat, messages, draft = "", onDraftChange = {}, onSend = {}, onBack = {}, time = SampleChats.time)
+            }
+        }
+
+    @Test
+    fun groupHeaderCountsPeople() {
+        showChat(SampleChats.family, SampleChats.familyMessages)
+        composeRule.onNodeWithText("${SampleChats.family.people.size} people").assertExists()
+    }
+
+    @Test
+    fun aOneToOneChatHasNoSenderNames() {
+        val becca = SampleChats.becca
+        showChat(SampleChats.chats[0], listOf(io.github.secnewt.messages.chats.Message(1, "Can you grab milk?", 0, becca)))
+        // Just the header: no name over the bubble.
+        composeRule.onAllNodesWithText("Becca", useUnmergedTree = true).assertCountEquals(1)
+    }
+
+    @Test
+    fun myMessagesUseTheGradientsTextColor() {
+        showChat(SampleChats.family, SampleChats.familyMessages)
+        val node = composeRule.onNodeWithText("I can do the brisket", useUnmergedTree = true).fetchSemanticsNode()
+        val results = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        node.config[androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult].action?.invoke(results)
+        assertEquals(androidx.compose.ui.graphics.Color(0xFF0A0B10), results.single().layoutInput.style.color)
+    }
+
+    @Test
+    fun theComposerIsTall() {
+        showChat(SampleChats.family, SampleChats.familyMessages)
+        composeRule.onNodeWithContentDescription("Send").assertHeightIsAtLeast(58.dp)
     }
 }

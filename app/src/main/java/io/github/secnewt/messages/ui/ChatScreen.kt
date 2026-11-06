@@ -1,5 +1,7 @@
 package io.github.secnewt.messages.ui
 
+import io.github.secnewt.ui.newtStripe
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -139,6 +141,15 @@ fun ChatScreen(
             // The screen draws under the status bar, so the top bar steps down below it.
             Row(Modifier.statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { ScreenHeader(chat.title, onBack) }
+                if (chat.isGroup) {
+                    Text(
+                        "${chat.people.size} people",
+                        fontFamily = io.github.secnewt.ui.NewtFonts.Mono,
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    )
+                }
                 if (onDetails != null) {
                     androidx.compose.material3.IconButton(onClick = onDetails, modifier = Modifier.size(56.dp)) {
                         Icon(Icons.Filled.Info, contentDescription = if (chat.isGroup) "Group details" else "Chat details")
@@ -219,7 +230,10 @@ private fun Bubble(
         if (reactions.isNotEmpty()) append(". Reactions: $reactions")
     }
     Row(
-        modifier = Modifier.fillMaxWidth().then(
+        // The whole row (avatar, bubble and the space beside it) is the long-press target.
+        modifier = Modifier.fillMaxWidth()
+            .then(if (onOptions != null) Modifier.pointerInput(onOptions) { detectTapGestures(onLongPress = { onOptions() }) } else Modifier)
+            .then(
             if (message.waiting || message.images.isNotEmpty() || message.files.isNotEmpty() || Links.find(message.body).isNotEmpty()) {
                 Modifier.semantics(mergeDescendants = false) { if (options != null) customActions = options }
             } else {
@@ -229,57 +243,71 @@ private fun Bubble(
                 }
             },
         ),
-        horizontalArrangement = if (message.mine) Arrangement.End else Arrangement.Start,
+        horizontalArrangement = if (message.mine) Arrangement.End else Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Bottom,
     ) {
+        if (showName && who != null && hue != null) {
+            Avatar(who, message.from?.photo, size = 36, color = hue.fill)
+        }
         Column(
             horizontalAlignment = if (message.mine) Alignment.End else Alignment.Start,
             modifier = Modifier.widthIn(max = 320.dp),
         ) {
-            if (showName && who != null) {
-                // On dark, the name is in the person's color. On light those hues can't reach
-                // 7:1 as text, so the name stays dark and a dot of their color sits beside it.
-                val dark = onDarkBackground()
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (!dark) Box(Modifier.size(10.dp).background(color, CircleShape))
+            // Mine: the solid gradient, so "me vs. them" reads from across the room. Theirs: a stripe
+            // of their color down the edge, and in groups their name inside the bubble.
+            val shape = RoundedCornerShape(16.dp)
+            val ink = if (message.mine) io.github.secnewt.ui.onNewtGradient() else MaterialTheme.colorScheme.onSurface
+            val dim = if (message.mine) io.github.secnewt.ui.onNewtGradient() else MaterialTheme.colorScheme.onSurfaceVariant
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .clip(shape)
+                    .then(
+                        if (message.mine) {
+                            Modifier.background(io.github.secnewt.ui.newtGradient())
+                        } else {
+                            Modifier
+                                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                                .newtStripe(color, tint = false)
+                        },
+                    )
+                    .padding(start = if (message.mine) 14.dp else 18.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
+            ) {
+                if (showName && who != null) {
+                    // On dark, the name is in the person's color. On light those hues can't reach
+                    // 7:1 as text, so the name stays dark; the stripe carries the color.
                     Text(
                         who,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = if (dark) color else MaterialTheme.colorScheme.onSurface,
+                        color = if (onDarkBackground()) color else MaterialTheme.colorScheme.onSurface,
                     )
                 }
-            }
-            Surface(
-                modifier = if (onOptions != null) {
-                    Modifier.pointerInput(onOptions) { detectTapGestures(onLongPress = { onOptions() }) }
-                } else {
-                    Modifier
-                },
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                border = BorderStroke(2.dp, color),
-            ) {
-                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    message.images.forEach { uri -> MmsImage(uri, onLongPress = onOptions) { onOpenPicture(uri) } }
-                    message.files.forEach { file ->
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("📎 ${file.name}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f, fill = false))
-                            if (onSave != null) {
-                                androidx.compose.material3.OutlinedButton(
-                                    onClick = { onSave(file.uri, file.name, file.type) },
-                                    modifier = Modifier.heightIn(min = 48.dp),
-                                ) { Text("Save", style = MaterialTheme.typography.titleMedium) }
-                            }
+                message.images.forEach { uri -> MmsImage(uri, onLongPress = onOptions) { onOpenPicture(uri) } }
+                message.files.forEach { file ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("📎 ${file.name}", style = MaterialTheme.typography.titleMedium, color = ink, modifier = Modifier.weight(1f, fill = false))
+                        if (onSave != null) {
+                            androidx.compose.material3.OutlinedButton(
+                                onClick = { onSave(file.uri, file.name, file.type) },
+                                modifier = Modifier.heightIn(min = 48.dp),
+                            ) { Text("Save", style = MaterialTheme.typography.titleMedium, color = ink) }
                         }
                     }
-                    if (message.body.isNotEmpty()) Text(linked(message.body, onNumber), style = MaterialTheme.typography.bodyLarge)
-                    if (message.waiting) {
-                        androidx.compose.material3.OutlinedButton(onClick = onDownload, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text("Download", style = MaterialTheme.typography.titleMedium)
-                        }
-                    }
-                    Text(time, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                if (message.body.isNotEmpty()) {
+                    Text(
+                        linked(message.body, onNumber, linkColor = if (message.mine) ink else MaterialTheme.colorScheme.primary),
+                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = 19.sp, lineHeight = 25.sp),
+                        color = ink,
+                    )
+                }
+                if (message.waiting) {
+                    androidx.compose.material3.OutlinedButton(onClick = onDownload, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text("Download", style = MaterialTheme.typography.titleMedium, color = ink)
+                    }
+                }
+                Text(time, fontFamily = io.github.secnewt.ui.NewtFonts.Mono, fontSize = 16.sp, color = dim)
             }
             if (message.reactions.isNotEmpty()) {
                 Row(
@@ -294,7 +322,7 @@ private fun Bubble(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(12.dp))
                                 .clickable(onClickLabel = "See who reacted", onClick = onShowReactions)
-                                .border(1.5.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
+                                .border(2.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
                                 .heightIn(min = 36.dp)
                                 .padding(horizontal = 10.dp, vertical = 4.dp),
                         )
@@ -310,12 +338,16 @@ private fun Bubble(
  * browser or mail app; a phone number opens [onNumber]'s menu (call, text, copy, add).
  */
 @Composable
-private fun linked(text: String, onNumber: (String) -> Unit): androidx.compose.ui.text.AnnotatedString {
+private fun linked(
+    text: String,
+    onNumber: (String) -> Unit,
+    linkColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary,
+): androidx.compose.ui.text.AnnotatedString {
     val links = Links.find(text)
     if (links.isEmpty()) return androidx.compose.ui.text.AnnotatedString(text)
     val style = androidx.compose.ui.text.TextLinkStyles(
         androidx.compose.ui.text.SpanStyle(
-            color = MaterialTheme.colorScheme.primary,
+            color = linkColor,
             textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
             fontWeight = FontWeight.SemiBold,
         ),
@@ -415,10 +447,29 @@ private fun ComposeBar(draft: String, onDraftChange: (String) -> Unit, onSend: (
             label = { Text("Message") },
             colors = neonFieldColors(),
             textStyle = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.weight(1f).heightIn(min = 56.dp),
+            modifier = Modifier.weight(1f).heightIn(min = 58.dp),
         )
-        FilledIconButton(onClick = onSend, enabled = canSend, modifier = Modifier.size(56.dp)) {
-            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+        // The gradient send button; outlined and dim until there's something to send.
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(58.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .then(
+                    if (canSend) {
+                        Modifier.background(io.github.secnewt.ui.newtGradient())
+                    } else {
+                        Modifier.border(2.5.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
+                    },
+                )
+                .clickable(enabled = canSend, role = androidx.compose.ui.semantics.Role.Button, onClick = onSend)
+                .semantics { contentDescription = "Send" },
+        ) {
+            Icon(
+                Icons.AutoMirrored.Filled.Send,
+                contentDescription = null,
+                tint = if (canSend) io.github.secnewt.ui.onNewtGradient() else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
