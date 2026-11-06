@@ -190,7 +190,7 @@ class ChatScreensTest {
                 Details(chat = SampleChats.chats[4], onPickColor = { person, hue, every -> picked = Triple(person.shownName, hue, every) })
             }
         }
-        composeRule.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("Change Pastor Dave's color", substring = true))
+        openMore("Pastor Dave")
         composeRule.onNodeWithContentDescription("Change Pastor Dave's color", substring = true).performClick()
         // Sam keeps the teal both names pick, and the picker says so.
         composeRule.onNodeWithText("Sam has this here").assertExists()
@@ -205,8 +205,8 @@ class ChatScreensTest {
     fun removingSomeoneStartsANewGroup() {
         var members: List<String>? = null
         composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { Details(onNewMembers = { members = it }) } }
-        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Remove Sam from the group"))
-        composeRule.onNodeWithText("Remove Sam from the group").performClick()
+        openMore("Sam")
+        composeRule.onNodeWithText("Remove from group").performClick()
         composeRule.onNodeWithText("Start new group").performClick()
         assertEquals(listOf("+19725550111", "+19725550144", "+14695550199"), members)
     }
@@ -215,7 +215,7 @@ class ChatScreensTest {
     fun unknownNumbersCanBeAddedToContacts() {
         var added: String? = null
         composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { Details(onAddToContacts = { added = it.address }) } }
-        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Add to contacts"))
+        openMore("+14695550199")
         composeRule.onNodeWithText("Add to contacts").performClick()
         assertEquals("+14695550199", added)
     }
@@ -383,7 +383,7 @@ class ChatScreensTest {
                 )
             }
         }
-        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Block Sam"))
+        openMore("Sam")
         composeRule.onNodeWithText("Block Sam").performClick()
         composeRule.onNodeWithText("Block Sam?").assertIsDisplayed()
         composeRule.onNodeWithText("Block").performClick()
@@ -469,7 +469,7 @@ class ChatScreensTest {
                 )
             }
         }
-        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Edit contact"))
+        openMore("Becca")
         composeRule.onNodeWithContentDescription("Edit Becca's contact").performClick()
         assertEquals("Becca" to true, opened)
     }
@@ -631,5 +631,22 @@ class ChatScreensTest {
         settingsScreen()
         composeRule.onNodeWithText("Quiet in Do Not Disturb").performScrollTo().assertIsOn()
         composeRule.onNodeWithText("Read the message too").performScrollTo().assertIsOff()
+    }
+
+    /** Opens someone's ⋯ menu in Group details. */
+    private fun openMore(name: String) {
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("More for $name"))
+        composeRule.onNodeWithContentDescription("More for $name").performClick()
+    }
+
+    @Test
+    fun groupDetailsWritesEachColorAndHidesDangerBehindMore() {
+        composeRule.setContent { NewtTheme(darkTheme = true) { Details() } }
+        composeRule.onNodeWithText("Yellow · +19725550111", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("Block Becca").assertDoesNotExist()
+        composeRule.onNodeWithText("Remove from group").assertDoesNotExist()
+        openMore("Becca")
+        composeRule.onNodeWithText("Block Becca").assertExists()
+        composeRule.onNodeWithText("Remove from group").assertExists()
     }
 }
