@@ -551,13 +551,55 @@ private fun SelectTextDialog(text: String, onClose: () -> Unit) {
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                androidx.compose.foundation.text.selection.SelectionContainer(
-                    Modifier.weight(1f).verticalScroll(androidx.compose.foundation.rememberScrollState()),
-                ) {
-                    Text(text, style = MaterialTheme.typography.headlineSmall)
-                }
+                SelectableText(text, Modifier.weight(1f).verticalScroll(androidx.compose.foundation.rememberScrollState()))
             }
         }
+    }
+}
+
+/**
+ * Words to pick from, with what's picked shown loudly: solid color behind, dark words on it
+ * (8:1 or better), not Android's faint see-through tint. A read-only text field, so it knows
+ * the selection and can color it; Android's Copy menu comes up as usual.
+ */
+@Composable
+internal fun SelectableText(
+    text: String,
+    modifier: Modifier = Modifier,
+    picked: androidx.compose.ui.text.TextRange = androidx.compose.ui.text.TextRange.Zero,
+) {
+    var value by androidx.compose.runtime.remember(text) {
+        androidx.compose.runtime.mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(text, picked))
+    }
+    val loud = androidx.compose.ui.text.SpanStyle(
+        color = MaterialTheme.colorScheme.onPrimary,
+        background = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.Bold,
+    )
+    val selection = value.selection
+    val highlight = androidx.compose.ui.text.input.VisualTransformation { shown ->
+        val styled = if (selection.collapsed) {
+            shown
+        } else {
+            androidx.compose.ui.text.AnnotatedString.Builder(shown).apply { addStyle(loud, selection.min, selection.max) }.toAnnotatedString()
+        }
+        androidx.compose.ui.text.input.TransformedText(styled, androidx.compose.ui.text.input.OffsetMapping.Identity)
+    }
+    // The handles in the same color; the built-in tint is off so it can't wash over the dark words.
+    val colors = androidx.compose.foundation.text.selection.TextSelectionColors(
+        handleColor = MaterialTheme.colorScheme.primary,
+        backgroundColor = androidx.compose.ui.graphics.Color.Transparent,
+    )
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.text.selection.LocalTextSelectionColors provides colors) {
+        androidx.compose.foundation.text.BasicTextField(
+            value = value,
+            // Read-only: only the selection ever changes.
+            onValueChange = { value = it.copy(text = text) },
+            readOnly = true,
+            textStyle = MaterialTheme.typography.headlineSmall.copy(color = MaterialTheme.colorScheme.onSurface),
+            visualTransformation = highlight,
+            modifier = modifier.fillMaxWidth(),
+        )
     }
 }
 
