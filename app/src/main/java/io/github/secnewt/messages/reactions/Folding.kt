@@ -35,5 +35,5 @@ object Folding {
 
     /** "❤️ to “Let's do lunch”", for a reaction whose message isn't here any more. */
     fun orphanText(reaction: ParsedReaction): String =
-        "${reaction.emoji} to “${reaction.quoted.removeSurrounding("\"")}”"
+        if (reaction.picture) "${reaction.emoji} to a picture" else "${reaction.emoji} to “${reaction.quoted.removeSurrounding("\"")}”"
 }

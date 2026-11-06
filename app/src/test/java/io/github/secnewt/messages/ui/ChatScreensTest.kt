@@ -507,4 +507,67 @@ class ChatScreensTest {
         composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { family() } }
         composeRule.onNodeWithContentDescription("Reactions: ❤️ from Mom, ❤️ from Becca, 😂 from Sam", substring = true).assertIsDisplayed()
     }
+
+    private val withNumber = listOf(
+        io.github.secnewt.messages.chats.Message(1, "214-555-1234", 60_000, SampleChats.becca),
+        io.github.secnewt.messages.chats.Message(2, "", 120_000, SampleChats.becca, images = listOf("content://mms/part/9")),
+    )
+
+    @Test
+    fun tappingAPhoneNumberOffersCallTextCopyAndAdd() {
+        var called: String? = null
+        var texted: String? = null
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatScreen(
+                    SampleChats.chats[0], withNumber, draft = "", onDraftChange = {}, onSend = {}, onBack = {}, time = SampleChats.time,
+                    onCallNumber = { called = it }, onTextNumber = { texted = it }, onAddNumberToContacts = {},
+                )
+            }
+        }
+        composeRule.onNodeWithText("214-555-1234").performClick()
+        listOf("Text", "Copy number", "Add to contacts").forEach { composeRule.onNodeWithText(it).assertIsDisplayed() }
+        composeRule.onNodeWithText("Call").performClick()
+        assertEquals("214-555-1234", called)
+        composeRule.onNodeWithText("214-555-1234").performClick()
+        composeRule.onNodeWithText("Text").performClick()
+        assertEquals("214-555-1234", texted)
+    }
+
+    @Test
+    fun aPictureWithNoWordsCanBeReactedToAndForwarded() {
+        var reacted: Pair<Long, String>? = null
+        var forwarded: Long? = null
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatScreen(
+                    SampleChats.chats[0], withNumber, draft = "", onDraftChange = {}, onSend = {}, onBack = {}, time = SampleChats.time,
+                    onReact = { m, e -> reacted = m.id to e }, onForward = { forwarded = it.id },
+                )
+            }
+        }
+        composeRule.onNodeWithText("📷 Picture").performTouchInput { longClick() }
+        composeRule.onAllNodesWithText("Copy text").assertCountEquals(0)
+        composeRule.onNodeWithContentDescription("React ❤️").performClick()
+        assertEquals(2L to "❤️", reacted)
+        composeRule.onNodeWithText("📷 Picture").performTouchInput { longClick() }
+        composeRule.onNodeWithText("Forward").performClick()
+        assertEquals(2L, forwarded)
+    }
+
+    @Test
+    fun selectTextShowsTheWordsBigToPickFrom() {
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatScreen(SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {}, time = SampleChats.time)
+            }
+        }
+        composeRule.onNodeWithContentDescription("Becca: Thank you both!", substring = true)
+            .performTouchInput { longClick(androidx.compose.ui.geometry.Offset(80f, center.y)) }
+        composeRule.onNodeWithText("Select text").performClick()
+        composeRule.onNodeWithText("Hold a word", substring = true).assertIsDisplayed()
+        composeRule.onAllNodesWithText("Thank you both!").onLast().assertIsDisplayed()
+        composeRule.onNodeWithText("Done").performClick()
+        composeRule.onAllNodesWithText("Hold a word", substring = true).assertCountEquals(0)
+    }
 }

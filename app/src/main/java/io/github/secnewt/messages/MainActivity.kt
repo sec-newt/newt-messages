@@ -406,6 +406,29 @@ class MainActivity : ComponentActivity() {
                 io.github.secnewt.messages.reactions.Reactions.reply(message, emoji)?.let { text -> Thread { send(chat, text) }.start() }
             },
             onDeleteMessage = { message -> Thread { MessageStore(this).deleteMessage(message.id) }.start() },
+            onForward = { message ->
+                // Forwarding works like sharing from another app: back to the chat list to pick
+                // a chat (or start one), where the words and pictures wait in the message box.
+                shared = message.images.mapIndexed { i, uri ->
+                    io.github.secnewt.messages.chats.Attachment(uri, if (message.images.size > 1) "picture ${i + 1}.jpg" else "picture.jpg", "image/jpeg")
+                } + message.files
+                sharedText = message.body
+                openThread = null
+            },
+            onCallNumber = { number ->
+                runCatching { startActivity(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null))) }.onFailure {
+                    Toast.makeText(this, "No phone app could call it.", Toast.LENGTH_LONG).show()
+                }
+            },
+            onTextNumber = { number -> open(listOf(number)) },
+            onAddNumberToContacts = { number ->
+                runCatching {
+                    startActivity(
+                        Intent(ContactsContract.Intents.Insert.ACTION).setType(ContactsContract.RawContacts.CONTENT_TYPE)
+                            .putExtra(ContactsContract.Intents.Insert.PHONE, number),
+                    )
+                }.onFailure { Toast.makeText(this, "No contacts app could add it.", Toast.LENGTH_LONG).show() }
+            },
         )
     }
 

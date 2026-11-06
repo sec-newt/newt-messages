@@ -96,8 +96,9 @@ class Notifier(private val context: Context) {
         val how = settings.settings().reactions
         if (how == ReactionNotify.OFF) return
         val quote = (target?.body ?: reaction.quoted.removeSurrounding("\"")).let { if (it.length > 60) it.take(57) + "…" else it }
-        val whose = if (target == null || target.mine) "your message" else "${target.from?.shownName}'s message"
-        val text = "${from.shownName} ${reaction.emoji} $whose “$quote”"
+        val what = if (reaction.picture) "picture" else "message"
+        val whose = if (target == null || target.mine) "your $what" else "${target.from?.shownName}'s $what"
+        val text = if (reaction.picture) "${from.shownName} ${reaction.emoji} $whose" else "${from.shownName} ${reaction.emoji} $whose “$quote”"
         val channel = if (how == ReactionNotify.LIKE_A_TEXT) CHANNEL_MESSAGES else CHANNEL_REACTIONS
         val notification = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_launcher_monochrome)
