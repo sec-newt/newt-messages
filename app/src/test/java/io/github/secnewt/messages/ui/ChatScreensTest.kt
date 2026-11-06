@@ -29,6 +29,9 @@ import io.github.secnewt.messages.chats.Chat
 import io.github.secnewt.messages.chats.ChatTab
 import io.github.secnewt.test.newtScreenshot
 import org.junit.Assert.assertEquals
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsOff
+import io.github.secnewt.ui.NewtTheme
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -600,5 +603,33 @@ class ChatScreensTest {
             ))
         // Still read-only: the words never change.
         composeRule.onNodeWithText("Dr. Lee's office is 214-555-1234, open till 5").assertIsDisplayed()
+    }
+
+    private fun settingsScreen(onChange: (io.github.secnewt.messages.settings.MessagesSettings) -> Unit = {}) = composeRule.setContent {
+        NewtTheme(darkTheme = true) {
+            SettingsScreen(io.github.secnewt.messages.settings.MessagesSettings(), onChange = onChange, onBack = {})
+        }
+    }
+
+    @Test
+    fun settingsOnlyTheChosenReactionShowsItsHint() {
+        settingsScreen()
+        composeRule.onNodeWithText("A quiet notification like \"Becca ❤️ your message\"", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("With sound, like any message", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun settingsSayWhoIsMessagingIsAThreeWayChoice() {
+        var changed: io.github.secnewt.messages.settings.MessagesSettings? = null
+        settingsScreen { changed = it }
+        composeRule.onNodeWithText("Headphones").performScrollTo().performClick()
+        assertEquals(io.github.secnewt.messages.settings.SpeakMode.HEADPHONES_ONLY, changed?.speak)
+    }
+
+    @Test
+    fun settingsSwitchesSayOnOrOff() {
+        settingsScreen()
+        composeRule.onNodeWithText("Quiet in Do Not Disturb").performScrollTo().assertIsOn()
+        composeRule.onNodeWithText("Read the message too").performScrollTo().assertIsOff()
     }
 }
