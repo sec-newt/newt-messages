@@ -13,6 +13,8 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextInputSelection
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasContentDescription
@@ -569,5 +571,34 @@ class ChatScreensTest {
         composeRule.onAllNodesWithText("Thank you both!").onLast().assertIsDisplayed()
         composeRule.onNodeWithText("Done").performClick()
         composeRule.onAllNodesWithText("Hold a word", substring = true).assertCountEquals(0)
+    }
+
+    private val pickedText = @androidx.compose.runtime.Composable {
+        androidx.compose.material3.Surface {
+            SelectableText(
+                "Dr. Lee's office is 214-555-1234, open till 5",
+                androidx.compose.ui.Modifier.padding(16.dp),
+                picked = androidx.compose.ui.text.TextRange(20, 32),
+            )
+        }
+    }
+
+    @Test fun selectedTextStandsOutDark() = composeRule.newtScreenshot("select-text-dark", dark = true, content = pickedText)
+    @Test fun selectedTextStandsOutLight() = composeRule.newtScreenshot("select-text-light", dark = false, content = pickedText)
+
+    @Test
+    fun pickingWordsSelectsThem() {
+        composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { pickedText() } }
+        composeRule.onNodeWithText("Dr. Lee", substring = true)
+            .assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(
+                androidx.compose.ui.semantics.SemanticsProperties.TextSelectionRange, androidx.compose.ui.text.TextRange(20, 32),
+            ))
+            .performTextInputSelection(androidx.compose.ui.text.TextRange(0, 3))
+        composeRule.onNodeWithText("Dr. Lee", substring = true)
+            .assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(
+                androidx.compose.ui.semantics.SemanticsProperties.TextSelectionRange, androidx.compose.ui.text.TextRange(0, 3),
+            ))
+        // Still read-only: the words never change.
+        composeRule.onNodeWithText("Dr. Lee's office is 214-555-1234, open till 5").assertIsDisplayed()
     }
 }
