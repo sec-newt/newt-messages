@@ -3,7 +3,7 @@ package io.github.secnewt.messages.reactions
 import io.github.secnewt.messages.chats.Message
 
 /** A reaction that arrived as a text: which emoji, on which quoted words, added or removed. */
-data class ParsedReaction(val emoji: String, val quoted: String, val removed: Boolean = false)
+data class ParsedReaction(val emoji: String, val quoted: String, val removed: Boolean = false, val picture: Boolean = false)
 
 /**
  * Over SMS and MMS a reaction is just a text. iPhones send `Loved “Let's do lunch”`;
@@ -39,8 +39,16 @@ object Reactions {
     private val GOOGLE_ADDED = Regex("(?s)^ [^​ ]*​([^​]*)​[^​ ]* (.*) [^​ ]* \\Z")
     private val GOOGLE_REMOVED = Regex("(?s)^ [^‌ ]*‌([^‌]*)‌[^‌ ]* (.*) [^‌ ]* \\Z")
 
+    // A picture has no words to quote, so iPhones name it instead: "Loved an image".
+    private const val PICTURE = "an image"
+    private val IPHONE_PICTURE_ADDED = IPHONE_ADDED.map { (emoji, regex) -> emoji to Regex(regex.pattern.replace(Q, PICTURE)) }
+    private val IPHONE_PICTURE_REMOVED = IPHONE_REMOVED.map { (emoji, regex) -> emoji to Regex(regex.pattern.replace(Q, PICTURE)) }
+    private val IPHONE_PICTURE_ANY_ADDED = Regex("^(?s)Reacted (.+?) to $PICTURE$")
+    private val IPHONE_PICTURE_ANY_REMOVED = Regex("^(?s)Removed (.+?) from $PICTURE$")
+
     /** The reaction in this text, or null when it's an ordinary message. */
     fun parse(body: String): ParsedReaction? {
+        parsePicture(body)?.let { return it }
         GOOGLE_REMOVED.find(body)?.let { return ParsedReaction(it.groupValues[1], it.groupValues[2], removed = true) }
         GOOGLE_ADDED.find(body)?.let { return ParsedReaction(it.groupValues[1], it.groupValues[2]) }
         for ((emoji, regex) in IPHONE_REMOVED) regex.find(body)?.let { return ParsedReaction(emoji, it.groupValues[1], removed = true) }
@@ -50,6 +58,17 @@ object Reactions {
             // "Reacted with a sticker" has no emoji to show.
             if (it.groupValues[1].startsWith("with ")) return null
             return ParsedReaction(it.groupValues[1], it.groupValues[2])
+        }
+        return null
+    }
+
+    private fun parsePicture(body: String): ParsedReaction? {
+        for ((emoji, regex) in IPHONE_PICTURE_REMOVED) if (regex.matches(body)) return ParsedReaction(emoji, "", removed = true, picture = true)
+        for ((emoji, regex) in IPHONE_PICTURE_ADDED) if (regex.matches(body)) return ParsedReaction(emoji, "", picture = true)
+        IPHONE_PICTURE_ANY_REMOVED.find(body)?.let { return ParsedReaction(it.groupValues[1], "", removed = true, picture = true) }
+        IPHONE_PICTURE_ANY_ADDED.find(body)?.let {
+            if (it.groupValues[1].startsWith("with ")) return null
+            return ParsedReaction(it.groupValues[1], "", picture = true)
         }
         return null
     }
@@ -64,6 +83,8 @@ object Reactions {
      * [newestFirst] is the chat's messages, newest first.
      */
     fun target(reaction: ParsedReaction, newestFirst: List<Message>): Message? {
+        // A reaction to "an image" goes on the newest picture.
+        if (reaction.picture) return newestFirst.asSequence().take(SEARCH_LIMIT).firstOrNull { it.images.isNotEmpty() }
         // Google Messages keeps the quote marks inside the quoted part.
         val quote = normalize(reaction.quoted).removeSurrounding("\"")
         val prefix = quote.removeSuffix("…").removeSuffix("...").trimEnd().takeIf { it != quote }
@@ -84,9 +105,9 @@ object Reactions {
      * The text to send for a reaction. iPhone wording reads cleanly everywhere, and Google
      * Messages shows it as a reaction too, so it's the default.
      */
-    fun iphoneText(emoji: String, quoted: String, removed: Boolean = false): String {
+    fun iphoneText(emoji: String, quoted: String, removed: Boolean = false, picture: Boolean = false): String {
         val word = IPHONE_WORDS[emoji]
-        val quote = "“$quoted”"
+        val quote = if (picture) PICTURE else "“$quoted”"
         return when {
             removed && word != null -> "Removed ${word.second} from $quote"
             removed -> "Removed $emoji from $quote"
@@ -103,15 +124,19 @@ object Reactions {
 
     /**
      * The text to send to react to [message] with [emoji], or take it back if I already had.
-     * Null when the message has no words to quote (a picture on its own).
+     * A picture with no words goes as iPhones word it, `Loved an image`. Null when there's
+     * nothing to react to (a picture message that hasn't downloaded).
      */
     fun reply(message: io.github.secnewt.messages.chats.Message, emoji: String): String? {
         val body = message.body.trim()
-        if (body.isEmpty() || message.waiting) return null
+        if (message.waiting || (body.isEmpty() && message.images.isEmpty())) return null
         val quote = if (body.length <= QUOTE_LIMIT) body else body.take(QUOTE_LIMIT - 1).trimEnd() + "…"
         val mine = message.reactions.any { it.from == null && it.emoji == emoji }
-        return iphoneText(emoji, quote, removed = mine)
+        return iphoneText(emoji, quote, removed = mine, picture = body.isEmpty())
     }
+
+    /** Whether there's something in [message] to react to. */
+    fun canReact(message: io.github.secnewt.messages.chats.Message): Boolean = reply(message, CHOICES.first()) != null
 
     private val IPHONE_WORDS = mapOf(
         "❤️" to ("Loved" to "a heart"),

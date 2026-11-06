@@ -97,4 +97,41 @@ class ReactionsTest {
         // What we send, we can read back.
         assertEquals(ParsedReaction("🙏", "x"), Reactions.parse(Reactions.iphoneText("🙏", "x")))
     }
+
+    @Test
+    fun `reactions to a picture, iPhone style`() {
+        assertEquals(ParsedReaction("❤️", "", picture = true), Reactions.parse("Loved an image"))
+        assertEquals(ParsedReaction("😂", "", picture = true), Reactions.parse("Laughed at an image"))
+        assertEquals(ParsedReaction("❤️", "", removed = true, picture = true), Reactions.parse("Removed a heart from an image"))
+        assertEquals(ParsedReaction("🙏", "", picture = true), Reactions.parse("Reacted 🙏 to an image"))
+        assertEquals(ParsedReaction("🙏", "", removed = true, picture = true), Reactions.parse("Removed 🙏 from an image"))
+        assertNull(Reactions.parse("I loved an image of the lake"))
+    }
+
+    @Test
+    fun `a picture reaction lands on the newest picture`() {
+        val newestFirst = listOf(msg(3, "nice"), msg(2, "", becca).copy(images = listOf("content://mms/part/2")), msg(1, "").copy(images = listOf("content://mms/part/1")))
+        assertEquals(2L, Reactions.target(ParsedReaction("❤️", "", picture = true), newestFirst)?.id)
+        assertNull(Reactions.target(ParsedReaction("❤️", "", picture = true), listOf(msg(1, "no pictures"))))
+    }
+
+    @Test
+    fun `reacting to a picture with no words`() {
+        val picture = msg(1, "", becca).copy(images = listOf("content://mms/part/1"))
+        assertEquals("Loved an image", Reactions.reply(picture, "❤️"))
+        assertEquals("Reacted 🙏 to an image", Reactions.reply(picture, "🙏"))
+        val mine = picture.copy(reactions = listOf(io.github.secnewt.messages.chats.Reaction("❤️", null)))
+        assertEquals("Removed a heart from an image", Reactions.reply(mine, "❤️"))
+        // A picture with words quotes the words.
+        assertEquals("Liked “Look!”", Reactions.reply(picture.copy(body = "Look!"), "👍"))
+        assertNull(Reactions.reply(picture.copy(waiting = true), "❤️"))
+        // What we send folds back onto the picture.
+        assertEquals(1L, Reactions.target(checkNotNull(Reactions.parse("Loved an image")), listOf(picture))?.id)
+        assert(Reactions.canReact(picture))
+    }
+
+    @Test
+    fun `a picture reaction with no picture left says so`() {
+        assertEquals("❤️ to a picture", Folding.orphanText(ParsedReaction("❤️", "", picture = true)))
+    }
 }

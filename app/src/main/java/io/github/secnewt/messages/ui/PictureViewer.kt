@@ -6,6 +6,8 @@ import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -33,9 +35,19 @@ import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** A picture full screen. Pinch to zoom, drag to look around; Save keeps a copy; Close or back to leave. */
+/**
+ * A picture full screen. Pinch to zoom, drag to look around; React puts an emoji on it, Forward
+ * sends it on, Save keeps a copy; Close or back to leave. [mine] is the emoji I've already put on.
+ */
 @Composable
-fun PictureViewer(uri: String, onClose: () -> Unit, onSave: (() -> Unit)? = null) {
+fun PictureViewer(
+    uri: String,
+    onClose: () -> Unit,
+    onSave: (() -> Unit)? = null,
+    onForward: (() -> Unit)? = null,
+    onReact: ((String) -> Unit)? = null,
+    mine: Set<String> = emptySet(),
+) {
     val context = LocalContext.current
     val image by produceState<ImageBitmap?>(null, uri) {
         value = withContext(Dispatchers.IO) { Pictures.thumbnail(context, uri, maxPx = 3000) }
@@ -71,6 +83,11 @@ fun PictureViewer(uri: String, onClose: () -> Unit, onSave: (() -> Unit)? = null
                 Modifier.align(Alignment.TopEnd).safeDrawingPadding().padding(16.dp),
                 horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
             ) {
+                if (onForward != null) {
+                    Button(onClick = onForward, modifier = Modifier.heightIn(min = 56.dp)) {
+                        Text("Forward", style = MaterialTheme.typography.titleMedium)
+                    }
+                }
                 if (onSave != null) {
                     Button(onClick = onSave, modifier = Modifier.heightIn(min = 56.dp)) {
                         Text("Save", style = MaterialTheme.typography.titleMedium)
@@ -78,6 +95,15 @@ fun PictureViewer(uri: String, onClose: () -> Unit, onSave: (() -> Unit)? = null
                 }
                 Button(onClick = onClose, modifier = Modifier.heightIn(min = 56.dp)) {
                     Text("Close", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+            if (onReact != null) {
+                // On a dark strip so the emoji stand out over any picture.
+                Box(
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Color.Black.copy(alpha = 0.85f))
+                        .navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
+                ) {
+                    ReactionRow(mine, onReact, tint = Color.White)
                 }
             }
         }
