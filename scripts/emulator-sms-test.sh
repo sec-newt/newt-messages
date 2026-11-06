@@ -125,7 +125,9 @@ grep -q 'text="Small group"' ui.xml || fail "After renaming, the group's name di
 echo "Renaming a group works."
 
 # Removing someone starts a new group with the others (keeping the name), which opens.
-tap "Remove 5550111 from the group"
+# Remove is in the person's ⋯ menu.
+tap "More for 5550111"
+tap "Remove from group"
 tap "Start new group"
 tap "Group details"
 adb shell uiautomator dump /sdcard/ui.xml > /dev/null
