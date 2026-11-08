@@ -421,6 +421,7 @@ class MainActivity : ComponentActivity() {
                 }
             },
             onTextNumber = { number -> open(listOf(number)) },
+            loadDetails = { message -> withContext(Dispatchers.IO) { store.details(message) } },
             onAddNumberToContacts = { number ->
                 runCatching {
                     startActivity(

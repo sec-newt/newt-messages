@@ -1329,7 +1329,7 @@ public class PduPersister {
                     java.util.List<String> from = numbers(addressMap, PduHeaders.FROM);
                     java.util.List<String> to = groupMmsEnabled ? numbers(addressMap, PduHeaders.TO) : new java.util.ArrayList<String>();
                     java.util.List<String> cc = groupMmsEnabled ? numbers(addressMap, PduHeaders.CC) : new java.util.ArrayList<String>();
-                    java.util.List<String> mine = myNumbers(subscriptionId);
+                    java.util.List<String> mine = io.github.secnewt.messages.mms.OwnNumbers.INSTANCE.of(mContext, subscriptionId);
                     recipients.addAll(io.github.secnewt.messages.mms.GroupRecipients.INSTANCE.pick(
                             from, to, cc, mine, (a, b) -> PhoneNumberUtils.compare(a, b)));
                     // Counts only, never numbers: enough to see later why a message landed where it did.
@@ -1492,35 +1492,6 @@ public class PduPersister {
         if (array == null) return out;
         for (EncodedStringValue v : array) {
             if (v != null && v.getString() != null) out.add(v.getString());
-        }
-        return out;
-    }
-
-    /**
-     * This phone's own numbers: the SIM the message came in on, the default texting SIM, and
-     * the main line. Empty without READ_PHONE_NUMBERS, or when the SIMs don't say.
-     */
-    private java.util.List<String> myNumbers(int subscriptionId) {
-        java.util.List<String> out = new java.util.ArrayList<String>();
-        if (mContext.checkSelfPermission(android.Manifest.permission.READ_PHONE_NUMBERS)
-                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            return out;
-        }
-        try {
-            android.telephony.SubscriptionManager subscriptions =
-                    mContext.getSystemService(android.telephony.SubscriptionManager.class);
-            if (subscriptions != null) {
-                int[] ids = {subscriptionId, android.telephony.SubscriptionManager.getDefaultSmsSubscriptionId()};
-                for (int id : ids) {
-                    if (!android.telephony.SubscriptionManager.isValidSubscriptionId(id)) continue;
-                    String number = subscriptions.getPhoneNumber(id);
-                    if (number != null && !number.isEmpty()) out.add(number);
-                }
-            }
-            String line1 = mTelephonyManager.getLine1Number();
-            if (line1 != null && !line1.isEmpty()) out.add(line1);
-        } catch (SecurityException e) {
-            // Treated as unknown.
         }
         return out;
     }
