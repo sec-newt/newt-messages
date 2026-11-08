@@ -14,6 +14,9 @@ Changes from that copy:
 - `PduPersister` saves the subscription id whenever it's real (the library's checker is gone).
 - `PduPersister.loadRecipients` reads my own number only with READ_PHONE_NUMBERS granted, and
   never crashes without it (the original would throw on the first group message).
+- Incoming messages pick their chat through `GroupRecipients`: everyone in From, To and Cc
+  minus my own number (from the SIM it came in on and the default texting SIM). The original assumed a lone To was me, which sent group
+  messages from phones that put one member in To and the rest in Cc into a smaller group.
 - DRM (forward-locked) conversion removed: it used a hidden Android class, and copy-protected
   MMS parts are a flip-phone-era feature. Such parts are saved as they arrive.
 
