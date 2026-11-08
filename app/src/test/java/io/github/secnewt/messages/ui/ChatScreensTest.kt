@@ -708,4 +708,38 @@ class ChatScreensTest {
         showChat(SampleChats.family, SampleChats.familyMessages)
         composeRule.onNodeWithContentDescription("Send").assertHeightIsAtLeast(58.dp)
     }
+
+    @Test
+    fun detailsShowWhoAMessageWasReallyFromAndTo() {
+        val details = io.github.secnewt.messages.chats.MessageDetails(
+            picture = true,
+            from = io.github.secnewt.messages.chats.Addressee(io.github.secnewt.messages.chats.Person("+12545550121", "Shilo Thompson"), me = false),
+            to = listOf(io.github.secnewt.messages.chats.Addressee(io.github.secnewt.messages.chats.Person("9725550199", "Jerry"), me = false)),
+            cc = listOf(
+                io.github.secnewt.messages.chats.Addressee(io.github.secnewt.messages.chats.Person("+19725550100"), me = true),
+                io.github.secnewt.messages.chats.Addressee(io.github.secnewt.messages.chats.Person("+12545550120", "Landon Thompson"), me = false),
+            ),
+            sentMillis = 1_762_550_000_000, receivedMillis = 1_762_550_005_000,
+        )
+        var asked: Long? = null
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatScreen(
+                    SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {}, time = SampleChats.time,
+                    loadDetails = { asked = it.id; details },
+                )
+            }
+        }
+        composeRule.onNodeWithContentDescription("Becca: Thank you both!", substring = true)
+            .performTouchInput { longClick(androidx.compose.ui.geometry.Offset(80f, center.y)) }
+        composeRule.onNodeWithText("Details").performClick()
+        composeRule.waitForIdle()
+        assertEquals(4L, asked)
+        listOf(
+            "Picture or group message (MMS)", "Shilo Thompson · +12545550121", "Jerry · 9725550199",
+            "You · +19725550100", "Landon Thompson · +12545550120",
+        ).forEach { composeRule.onNodeWithText(it).assertExists() }
+        composeRule.onNodeWithText("Close").performClick()
+        composeRule.onAllNodesWithText("Jerry · 9725550199").assertCountEquals(0)
+    }
 }

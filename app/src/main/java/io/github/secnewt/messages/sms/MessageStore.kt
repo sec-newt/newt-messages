@@ -8,6 +8,8 @@ import io.github.secnewt.messages.chats.Attachment
 import io.github.secnewt.messages.chats.Chat
 import io.github.secnewt.messages.chats.GroupNames
 import io.github.secnewt.messages.chats.Message
+import io.github.secnewt.messages.chats.MessageDetails
+import io.github.secnewt.messages.chats.Addressee
 import io.github.secnewt.messages.chats.Person
 import io.github.secnewt.messages.chats.Previews
 import io.github.secnewt.messages.reactions.Folding
@@ -144,6 +146,46 @@ class MessageStore(private val context: Context) {
             Uri.parse("content://mms/$mmsId/addr"), arrayOf(Telephony.Mms.Addr.ADDRESS),
             "${Telephony.Mms.Addr.TYPE} = 137", null, null,
         )?.use { if (it.moveToFirst()) it.getString(0) else null }?.also { senders[mmsId] = it }
+    }
+
+    /**
+     * Who a message was really from and to, and when, as stored with it (for Details). Null
+     * if it's gone. Picture and group messages keep their full To and Cc lists.
+     */
+    fun details(message: Message): MessageDetails? {
+        val mine = io.github.secnewt.messages.mms.OwnNumbers.of(context)
+        val same = { a: String, b: String -> android.telephony.PhoneNumberUtils.compare(a, b) }
+        if (message.id < 0) {
+            val id = -message.id
+            val times = resolver.query(
+                Uri.withAppendedPath(Telephony.Mms.CONTENT_URI, id.toString()),
+                arrayOf(Telephony.Mms.DATE, Telephony.Mms.DATE_SENT), null, null, null,
+            )?.use { if (it.moveToFirst()) it.getLong(0) to it.getLong(1) else null } ?: return null
+            val rows = resolver.query(
+                Uri.parse("content://mms/$id/addr"), arrayOf(Telephony.Mms.Addr.ADDRESS, Telephony.Mms.Addr.TYPE), null, null, null,
+            )?.use { c -> buildList { while (c.moveToNext()) add(c.getString(0).orEmpty() to c.getInt(1)) } }.orEmpty()
+            val (from, to, cc) = MessageDetails.sort(rows, mine, same, ::person)
+            return MessageDetails(
+                picture = true, from = from, to = to, cc = cc,
+                sentMillis = times.second.takeIf { it > 0 }?.times(1000), receivedMillis = times.first * 1000,
+            )
+        }
+        return resolver.query(
+            Uri.withAppendedPath(Telephony.Sms.CONTENT_URI, message.id.toString()),
+            arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.TYPE, Telephony.Sms.DATE, Telephony.Sms.DATE_SENT), null, null, null,
+        )?.use { c ->
+            if (!c.moveToFirst()) return@use null
+            val them = Addressee(person(c.getString(0).orEmpty()), me = false)
+            val me = Addressee(Person(mine.firstOrNull().orEmpty()), me = true)
+            val incoming = c.getInt(1) == Telephony.Sms.MESSAGE_TYPE_INBOX
+            MessageDetails(
+                picture = false,
+                from = if (incoming) them else me,
+                to = listOf(if (incoming) me else them),
+                sentMillis = c.getLong(3).takeIf { incoming && it > 0 },
+                receivedMillis = c.getLong(2),
+            )
+        }
     }
 
     /** Where a not-yet-downloaded message waits at the carrier, for Retry. */

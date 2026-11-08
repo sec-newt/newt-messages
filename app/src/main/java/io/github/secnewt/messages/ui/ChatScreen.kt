@@ -93,6 +93,8 @@ fun ChatScreen(
     onCallNumber: ((String) -> Unit)? = null,
     onTextNumber: ((String) -> Unit)? = null,
     onAddNumberToContacts: ((String) -> Unit)? = null,
+    /** Who a message was really from and to, and when (read from the message store). */
+    loadDetails: (suspend (Message) -> io.github.secnewt.messages.chats.MessageDetails?)? = null,
 ) {
     var acting by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Message?>(null) }
     var reactionsOf by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Message?>(null) }
@@ -100,6 +102,8 @@ fun ChatScreen(
     var number by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<String?>(null) }
     reactionsOf?.let { message -> WhoReactedDialog(message) { reactionsOf = null } }
     selecting?.let { message -> SelectTextDialog(message.body) { selecting = null } }
+    var detailsOf by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Message?>(null) }
+    detailsOf?.let { message -> loadDetails?.let { load -> MessageDetailsDialog(message, load) { detailsOf = null } } }
     number?.let { shown ->
         NumberActionsSheet(
             shown,
@@ -115,6 +119,7 @@ fun ChatScreen(
             onReact = onReact?.let { react -> { emoji: String -> acting = null; react(message, emoji) } },
             onSelect = { acting = null; selecting = message },
             onForward = onForward?.let { forward -> { acting = null; forward(message) } },
+            onDetails = if (loadDetails != null) ({ acting = null; detailsOf = message }) else null,
             onDelete = onDeleteMessage?.let { delete -> { acting = null; delete(message) } },
             onDismiss = { acting = null },
         )
@@ -474,7 +479,7 @@ private fun ComposeBar(draft: String, onDraftChange: (String) -> Unit, onSend: (
     }
 }
 
-/** What you can do with one message: react, copy or pick out its words, forward it, or delete it. */
+/** What you can do with one message: react, copy or pick out its words, forward it, see its details, or delete it. */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun MessageActionsSheet(
@@ -482,6 +487,7 @@ private fun MessageActionsSheet(
     onReact: ((String) -> Unit)?,
     onSelect: () -> Unit,
     onForward: (() -> Unit)?,
+    onDetails: (() -> Unit)?,
     onDelete: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
@@ -508,6 +514,11 @@ private fun MessageActionsSheet(
             if (onForward != null && !message.waiting && (message.body.isNotBlank() || message.images.isNotEmpty() || message.files.isNotEmpty())) {
                 androidx.compose.material3.TextButton(onClick = onForward, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                     Text("Forward", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+            if (onDetails != null) {
+                androidx.compose.material3.TextButton(onClick = onDetails, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+                    Text("Details", style = MaterialTheme.typography.titleMedium)
                 }
             }
             if (onDelete != null) {
@@ -651,6 +662,69 @@ internal fun SelectableText(
             visualTransformation = highlight,
             modifier = modifier.fillMaxWidth(),
         )
+    }
+}
+
+/**
+ * Who a message was really from and to, and when. For a group message, To and Cc are the full
+ * lists it arrived with, so it shows whether it belongs in this chat.
+ */
+@Composable
+private fun MessageDetailsDialog(
+    message: Message,
+    load: suspend (Message) -> io.github.secnewt.messages.chats.MessageDetails?,
+    onClose: () -> Unit,
+) {
+    val details by androidx.compose.runtime.produceState<io.github.secnewt.messages.chats.MessageDetails?>(null, message.id) { value = load(message) }
+    val format = androidx.compose.runtime.remember {
+        java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT)
+    }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Details") },
+        text = {
+            Column(
+                Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                val shown = details
+                if (shown == null) {
+                    Text("Loading…", style = MaterialTheme.typography.bodyLarge)
+                } else {
+                    DetailsPart("Kind", listOf(if (shown.picture) "Picture or group message (MMS)" else "Text message (SMS)"))
+                    DetailsPart("From", listOfNotNull(shown.from?.let(::addressee)))
+                    DetailsPart("To", shown.to.map(::addressee))
+                    if (shown.cc.isNotEmpty()) DetailsPart("Cc", shown.cc.map(::addressee))
+                    shown.sentMillis?.let { DetailsPart("Sent", listOf(format.format(java.util.Date(it)))) }
+                    DetailsPart(if (shown.from?.me == true) "Saved" else "Received", listOf(format.format(java.util.Date(shown.receivedMillis))))
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("Close", style = MaterialTheme.typography.titleMedium)
+            }
+        },
+    )
+}
+
+/** "Shilo Thompson · +12545550121", "You · +19725550100", or the number alone. */
+private fun addressee(a: io.github.secnewt.messages.chats.Addressee): String {
+    val number = a.person.address
+    val name = if (a.me) "You" else a.person.name
+    return when {
+        name != null && number.isNotBlank() && name != number -> "$name · $number"
+        name != null -> name
+        else -> number.ifBlank { "Unknown" }
+    }
+}
+
+@Composable
+private fun DetailsPart(label: String, lines: List<String>) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        if (lines.isEmpty()) Text("Nobody listed", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        lines.forEach { Text(it, style = MaterialTheme.typography.bodyLarge) }
     }
 }
 
