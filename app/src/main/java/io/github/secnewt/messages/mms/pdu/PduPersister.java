@@ -1324,22 +1324,18 @@ public class PduPersister {
             switch (msgType) {
                 case PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND:
                 case PduHeaders.MESSAGE_TYPE_RETRIEVE_CONF:
-                    loadRecipients(PduHeaders.FROM, recipients, addressMap, false);
-
-                    // For received messages when group MMS is enabled, we want to associate this
-                    // message with the thread composed of all the recipients -- all but our own
-                    // number, that is. This includes the person who sent the
-                    // message or the FROM field (above) in addition to the other people the message
-                    // was addressed to or the TO field. Our own number is in that TO field and
-                    // we have to ignore it in loadRecipients.
-                    if (groupMmsEnabled) {
-                        loadRecipients(PduHeaders.TO, recipients, addressMap, true);
-
-                        // Also load any numbers in the CC field to address group messaging
-                        // compatibility issues with devices that place numbers in this field
-                        // for group messages.
-                        loadRecipients(PduHeaders.CC, recipients, addressMap, true);
-                    }
+                    // Newt Messages: the chat is everyone it's from and to, minus my own number.
+                    // See GroupRecipients for why Android's "a lone To is me" guess is gone.
+                    java.util.List<String> from = numbers(addressMap, PduHeaders.FROM);
+                    java.util.List<String> to = groupMmsEnabled ? numbers(addressMap, PduHeaders.TO) : new java.util.ArrayList<String>();
+                    java.util.List<String> cc = groupMmsEnabled ? numbers(addressMap, PduHeaders.CC) : new java.util.ArrayList<String>();
+                    java.util.List<String> mine = myNumbers();
+                    recipients.addAll(io.github.secnewt.messages.mms.GroupRecipients.INSTANCE.pick(
+                            from, to, cc, mine, (a, b) -> PhoneNumberUtils.compare(a, b)));
+                    // Counts only, never numbers: enough to see later why a message landed where it did.
+                    Log.i(TAG, "Incoming MMS: from " + from.size() + ", to " + to.size() + ", cc " + cc.size()
+                            + ", my number " + (mine.isEmpty() ? "unknown" : "known")
+                            + "; the chat has " + recipients.size() + " other(s)");
                     break;
                 case PduHeaders.MESSAGE_TYPE_SEND_REQ:
                     loadRecipients(PduHeaders.TO, recipients, addressMap, false);
@@ -1487,6 +1483,47 @@ public class PduPersister {
                 }
             }
         }
+    }
+
+    /** The numbers in one address header (FROM, TO or CC), as written. */
+    private static java.util.List<String> numbers(HashMap<Integer, EncodedStringValue[]> addressMap, int addressType) {
+        java.util.List<String> out = new java.util.ArrayList<String>();
+        EncodedStringValue[] array = addressMap.get(addressType);
+        if (array == null) return out;
+        for (EncodedStringValue v : array) {
+            if (v != null && v.getString() != null) out.add(v.getString());
+        }
+        return out;
+    }
+
+    /**
+     * This phone's own numbers, every SIM's (all of them are me), then the main line.
+     * Empty without READ_PHONE_NUMBERS, or when the SIMs don't say.
+     */
+    private java.util.List<String> myNumbers() {
+        java.util.List<String> out = new java.util.ArrayList<String>();
+        if (mContext.checkSelfPermission(android.Manifest.permission.READ_PHONE_NUMBERS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            return out;
+        }
+        try {
+            android.telephony.SubscriptionManager subscriptions =
+                    mContext.getSystemService(android.telephony.SubscriptionManager.class);
+            if (subscriptions != null) {
+                java.util.List<android.telephony.SubscriptionInfo> active = subscriptions.getActiveSubscriptionInfoList();
+                if (active != null) {
+                    for (android.telephony.SubscriptionInfo info : active) {
+                        String number = subscriptions.getPhoneNumber(info.getSubscriptionId());
+                        if (number != null && !number.isEmpty()) out.add(number);
+                    }
+                }
+            }
+            String line1 = mTelephonyManager.getLine1Number();
+            if (line1 != null && !line1.isEmpty()) out.add(line1);
+        } catch (SecurityException e) {
+            // Treated as unknown.
+        }
+        return out;
     }
 
     /**
