@@ -344,7 +344,11 @@ private fun ChatRow(chat: Chat, time: String, picked: Boolean?, onLongPress: (()
         if (chat.pinned) append(", pinned")
         if (chat.muted) append(", muted")
         if (unread) append(", ${chat.unread} unread")
-        if (chat.draft != null) append(". Draft: ${chat.draft}") else append(". ${chat.lastMessage}")
+        when {
+            chat.draft != null -> append(". Draft: ${chat.draft}")
+            chat.failed -> append(". Not sent: ${chat.lastMessage}")
+            else -> append(". ${chat.lastMessage}")
+        }
         append(". $time")
     }
     val accent = MaterialTheme.colorScheme.primary
@@ -407,10 +411,17 @@ private fun ChatRow(chat: Chat, time: String, picked: Boolean?, onLongPress: (()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     // An unsent draft shows instead of the last message, so it's easy to find again.
-                    if (chat.draft == null) androidx.compose.ui.text.AnnotatedString(chat.lastMessage)
-                    else androidx.compose.ui.text.buildAnnotatedString {
-                        withStyle(androidx.compose.ui.text.SpanStyle(color = accent, fontWeight = FontWeight.Bold)) { append("Draft: ") }
-                        append(chat.draft.lines().joinToString(" "))
+                    // A message that didn't go says so, in the danger color with a warning sign.
+                    when {
+                        chat.draft != null -> androidx.compose.ui.text.buildAnnotatedString {
+                            withStyle(androidx.compose.ui.text.SpanStyle(color = accent, fontWeight = FontWeight.Bold)) { append("Draft: ") }
+                            append(chat.draft.lines().joinToString(" "))
+                        }
+                        chat.failed -> androidx.compose.ui.text.buildAnnotatedString {
+                            withStyle(androidx.compose.ui.text.SpanStyle(color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)) { append("⚠ Not sent: ") }
+                            append(chat.lastMessage)
+                        }
+                        else -> androidx.compose.ui.text.AnnotatedString(chat.lastMessage)
                     },
                     style = MaterialTheme.typography.bodyLarge,
                     color = if (unread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,

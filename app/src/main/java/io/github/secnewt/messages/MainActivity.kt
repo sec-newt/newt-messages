@@ -30,13 +30,11 @@ import io.github.secnewt.messages.chats.ChatTab
 import io.github.secnewt.messages.chats.GroupNames
 import io.github.secnewt.messages.chats.Message
 import io.github.secnewt.messages.mms.Mms
-import io.github.secnewt.messages.ui.Pictures
 import android.net.Uri
-import android.telephony.SmsManager
 import android.widget.Toast
 import io.github.secnewt.messages.notify.Notifier
 import io.github.secnewt.messages.sms.MessageStore
-import io.github.secnewt.messages.sms.SmsSender
+import io.github.secnewt.messages.sms.Outgoing
 import io.github.secnewt.messages.ui.ChatDetailsScreen
 import io.github.secnewt.messages.ui.ChatListScreen
 import io.github.secnewt.messages.ui.NewChatScreen
@@ -74,6 +72,9 @@ class MainActivity : ComponentActivity() {
     // Pictures, videos or words shared from another app, waiting for me to pick a chat.
     private var shared by mutableStateOf<List<io.github.secnewt.messages.chats.Attachment>>(emptyList())
     private var sharedText by mutableStateOf("")
+    // A message that couldn't be sent, going back into its chat's message box.
+    private data class Unsent(val thread: Long, val text: String, val attachments: List<io.github.secnewt.messages.chats.Attachment>)
+    private var unsent by mutableStateOf<Unsent?>(null)
     // Who an "sms:" link was for, so a brand-new chat (no messages yet) can still open.
     private var startPeople by mutableStateOf<List<String>>(emptyList())
     private val changes = object : ContentObserver(Handler(Looper.getMainLooper())) {
@@ -296,7 +297,20 @@ class MainActivity : ComponentActivity() {
         val pickContactCard = rememberLauncherForActivityResult(ActivityResultContracts.PickContact()) { contact ->
             contact?.let { contactCard(it) }?.let { attachments = attachments + it }
         }
-        val messages by produceState(emptyList<Message>(), thread, version) { value = withContext(Dispatchers.IO) { store.messages(thread) } }
+        // A send that failed before anything was saved: its words and attachments come back.
+        LaunchedEffect(unsent) {
+            val back = unsent?.takeIf { it.thread == thread } ?: return@LaunchedEffect
+            unsent = null
+            draft = listOf(back.text, draft).filter { it.isNotBlank() }.joinToString(" ")
+            drafts.keep(thread, draft)
+            attachments = back.attachments + attachments
+        }
+        // The newest messages first; "Show older messages" reaches further back, a page at a time.
+        var reach by rememberSaveable(thread) { mutableIntStateOf(MessageStore.PAGE) }
+        val page by produceState(MessageStore.Page(emptyList(), false), thread, version, reach) {
+            value = withContext(Dispatchers.IO) { store.page(thread, reach) }
+        }
+        val messages = page.messages
         LaunchedEffect(thread, version) {
             withContext(Dispatchers.IO) {
                 store.markRead(thread)
@@ -350,6 +364,11 @@ class MainActivity : ComponentActivity() {
                     io.github.secnewt.messages.settings.SettingsStore(this).setPinned(thread, on)
                     version++
                 },
+                onNotificationSettings = {
+                    runCatching { startActivity(io.github.secnewt.messages.notify.Conversations.settings(this, chat)) }.onFailure {
+                        Toast.makeText(this, "Android's notification settings didn't open.", Toast.LENGTH_LONG).show()
+                    }
+                },
                 onMute = { on ->
                     io.github.secnewt.messages.settings.SettingsStore(this).setMuted(thread, on)
                     version++
@@ -382,6 +401,10 @@ class MainActivity : ComponentActivity() {
             onBack = { openThread = null },
             time = ::time,
             onDownload = { message -> Thread { retry(message) }.start() },
+            onShowOlder = if (page.hasOlder) ({ reach += MessageStore.PAGE }) else null,
+            onRetry = { message ->
+                Thread { Outgoing.retry(this, message)?.let(::complain) }.start()
+            },
             onAttach = { kind ->
                 when (kind) {
                     io.github.secnewt.messages.ui.AttachKind.MEDIA ->
@@ -403,7 +426,9 @@ class MainActivity : ComponentActivity() {
             onDetails = { showDetails = true },
             onReact = { message, emoji ->
                 // A reaction is an ordinary text in iPhone wording; it folds onto the message here too.
-                io.github.secnewt.messages.reactions.Reactions.reply(message, emoji)?.let { text -> Thread { send(chat, text) }.start() }
+                io.github.secnewt.messages.reactions.Reactions.reply(message, emoji)?.let { text ->
+                    Thread { Outgoing.send(this, chat.people.map { it.address }, text)?.let(::complain) }.start()
+                }
             },
             onDeleteMessage = { message -> Thread { MessageStore(this).deleteMessage(message.id) }.start() },
             onForward = { message ->
@@ -433,34 +458,23 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    /** One-to-one words go as a text; groups and attachments go as a picture message (MMS). */
+    /**
+     * Sends from the chat screen. If it can't even start (too big, a file that can't be read),
+     * the words and attachments go back in that chat's message box.
+     */
     private fun send(chat: Chat, text: String, attachments: List<io.github.secnewt.messages.chats.Attachment> = emptyList()) {
-        val to = chat.people.map { it.address }
-        if (!chat.isGroup && attachments.isEmpty()) {
-            SmsSender.send(this, to.first(), text)
-            return
+        val problem = Outgoing.send(this, chat.people.map { it.address }, text, attachments) ?: return
+        complain(problem)
+        runOnUiThread {
+            if (openThread == chat.threadId) {
+                unsent = Unsent(chat.threadId, text, attachments)
+            } else {
+                // Left the chat already: keep the words as its draft (attachments can't be kept).
+                val drafts = io.github.secnewt.messages.chats.Drafts(this)
+                drafts.keep(chat.threadId, listOf(text, drafts.draft(chat.threadId).orEmpty()).filter { it.isNotBlank() }.joinToString(" "))
+                version++
+            }
         }
-        val limit = getSystemService(SmsManager::class.java).carrierConfigValues
-            .getInt(SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE, 300 * 1024)
-        // Leave room for the words and the message's own headers.
-        val room = limit * 9 / 10 - text.length - 2048
-        val pictures = attachments.count { it.type.startsWith("image/") }
-        val others = attachments.filterNot { it.type.startsWith("image/") }.map { file ->
-            val bytes = runCatching { contentResolver.openInputStream(Uri.parse(file.uri))?.use { it.readBytes() } }.getOrNull()
-            if (bytes == null) return complain("Couldn't read ${file.name}.")
-            Mms.Part(bytes, file.type, file.name)
-        }
-        val left = room - others.sumOf { it.bytes.size }
-        if (left < 0 || (pictures > 0 && left < 20_000 * pictures)) {
-            return complain("Too big for a picture message: your carrier allows about ${limit / 1024} KB in all.")
-        }
-        // Pictures are shrunk to share what's left.
-        val shrunk = attachments.filter { it.type.startsWith("image/") }.map { picture ->
-            val bytes = Pictures.forSending(this, Uri.parse(picture.uri), maxBytes = left / pictures)
-                ?: return complain("${picture.name} couldn't be made small enough to send.")
-            Mms.Part(bytes, "image/jpeg", picture.name.substringBeforeLast('.') + ".jpg")
-        }
-        Mms.send(this, to, text, shrunk + others)
     }
 
     private fun complain(text: String) {
@@ -569,6 +583,7 @@ class MainActivity : ComponentActivity() {
         val removed = MessageStore(this).deleteChat(threadId)
         io.github.secnewt.messages.chats.Drafts(this).clear(threadId)
         Notifier(this).cancel(threadId)
+        io.github.secnewt.messages.notify.Conversations.remove(this, threadId)
         android.util.Log.i("NewtSms", "Deleted a chat ($removed messages)")
     }
 

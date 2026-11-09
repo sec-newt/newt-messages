@@ -93,16 +93,18 @@ object Mms {
             val persister = PduPersister.getPduPersister(context)
             val uri = persister.persist(message, Telephony.Mms.Inbox.CONTENT_URI, true, true, null, subscription)
             context.contentResolver.delete(noticeUri, null, null)
+            // A number Newt Phone blocks by its start: kept, but quietly, as already read.
+            val silenced = io.github.secnewt.messages.chats.BlockRules.blocked(context, message.getFrom()?.getString())
             val values = ContentValues().apply {
-                put(Telephony.Mms.READ, 0)
-                put(Telephony.Mms.SEEN, 0)
+                put(Telephony.Mms.READ, if (silenced) 1 else 0)
+                put(Telephony.Mms.SEEN, if (silenced) 1 else 0)
                 put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000)
                 if (location != null) put(Telephony.Mms.CONTENT_LOCATION, location)
             }
             context.contentResolver.update(uri, values, null, null)
             Log.i(TAG, "Stored an incoming MMS")
             message.getTransactionId()?.let { acknowledge(context, it, subscription) }
-            threadOf(context, uri)?.let { Notifier(context).update(it, announce = true) }
+            if (!silenced) threadOf(context, uri)?.let { Notifier(context).update(it, announce = true) }
         } finally {
             file.delete()
         }
@@ -111,7 +113,11 @@ object Mms {
     /** A file to send: its bytes, type ("image/jpeg", "application/pdf"…) and name. */
     class Part(val bytes: ByteArray, val type: String, val name: String)
 
-    /** Sends words and/or files (pictures, video, documents, contact cards) to one person or a group. */
+    /**
+     * Sends words and/or files (pictures, video, documents, contact cards) to one person or a
+     * group. Throws if the message can't be made or saved, so nothing is lost silently; once
+     * it's saved, any later trouble marks it failed, with Try again in the chat.
+     */
     fun send(context: Context, to: List<String>, text: String, files: List<Part> = emptyList(), subscription: Int = -1) {
         val request = SendReq().apply {
             setTo(to.map { EncodedStringValue(it) }.toTypedArray())
@@ -123,25 +129,64 @@ object Mms {
                 },
             )
         }
-        val bytes = PduComposer(context, request).make() ?: run {
-            Log.e(TAG, "Couldn't build an MMS")
-            return
-        }
+        val bytes = PduComposer(context, request).make() ?: error("Couldn't build the picture message")
         request.setMessageSize(bytes.size.toLong())
         val saved = PduPersister.getPduPersister(context)
             .persist(request, Telephony.Mms.Outbox.CONTENT_URI, true, true, null, subscription)
-        val file = newFile(context, "out").apply { writeBytes(bytes) }
-        val share = share(context, file)
-        context.grantUriPermission(PHONE, share, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        val done = Intent(context, MmsResultReceiver::class.java)
-            .setAction(MmsResultReceiver.SENT)
-            .putExtra(MmsResultReceiver.EXTRA_FILE, file.name)
-            .putExtra(MmsResultReceiver.EXTRA_MESSAGE, saved.toString())
-        // Mutable: Android adds the carrier's reply to it.
-        val pending = PendingIntent.getBroadcast(context, file.name.hashCode(), done, PendingIntent.FLAG_MUTABLE)
-        val overrides = Bundle().apply { putBoolean(SmsManager.MMS_CONFIG_GROUP_MMS_ENABLED, true) }
-        manager(context, subscription).sendMultimediaMessage(context, share, null, overrides, pending)
+        transmit(context, saved, bytes, subscription)
         Log.i(TAG, "Sending an MMS to ${to.size} recipient(s)")
+    }
+
+    /** Tries a failed picture or group message again, rebuilt from what's saved. */
+    fun resend(context: Context, message: Uri, subscription: Int = -1) {
+        val persister = PduPersister.getPduPersister(context)
+        val request = persister.load(message) as? SendReq ?: error("Not a message I sent")
+        request.setDate(System.currentTimeMillis() / 1000)
+        val bytes = PduComposer(context, request).make() ?: error("Couldn't rebuild the picture message")
+        context.contentResolver.update(
+            message,
+            ContentValues().apply {
+                put(Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_BOX_OUTBOX)
+                put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000)
+            },
+            null, null,
+        )
+        transmit(context, message, bytes, subscription)
+        Log.i(TAG, "Sending an MMS again")
+    }
+
+    /** Hands a saved message to Android's MMS service; marks it failed if that can't even start. */
+    private fun transmit(context: Context, saved: Uri, bytes: ByteArray, subscription: Int) {
+        val file = newFile(context, "out")
+        try {
+            file.writeBytes(bytes)
+            val share = share(context, file)
+            context.grantUriPermission(PHONE, share, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            val done = Intent(context, MmsResultReceiver::class.java)
+                .setAction(MmsResultReceiver.SENT)
+                .putExtra(MmsResultReceiver.EXTRA_FILE, file.name)
+                .putExtra(MmsResultReceiver.EXTRA_MESSAGE, saved.toString())
+            // Mutable: Android adds the carrier's reply to it.
+            val pending = PendingIntent.getBroadcast(context, file.name.hashCode(), done, PendingIntent.FLAG_MUTABLE)
+            val overrides = Bundle().apply { putBoolean(SmsManager.MMS_CONFIG_GROUP_MMS_ENABLED, true) }
+            manager(context, subscription).sendMultimediaMessage(context, share, null, overrides, pending)
+        } catch (e: Exception) {
+            Log.e(TAG, "Couldn't hand an MMS to Android", e)
+            onSent(context, false, file.name, saved)
+        }
+    }
+
+    /** Whether the carrier's reply to a send says it was taken. No reply counts as yes. */
+    fun carrierAccepted(reply: ByteArray?): Boolean {
+        if (reply == null || reply.isEmpty()) return true
+        val conf = try {
+            PduParser(reply, true).parse() as? io.github.secnewt.messages.mms.pdu.SendConf
+        } catch (e: Exception) {
+            null
+        } ?: return true
+        // 0: the reply left the status out.
+        val status = conf.getResponseStatus()
+        return status == 0 || status == PduHeaders.RESPONSE_STATUS_OK
     }
 
     fun onSent(context: Context, ok: Boolean, fileName: String, message: Uri) {
@@ -222,7 +267,11 @@ class MmsResultReceiver : BroadcastReceiver() {
                         context, ok, file, Uri.parse(intent.getStringExtra(EXTRA_NOTICE) ?: return@thread),
                         intent.getIntExtra(EXTRA_SUBSCRIPTION, -1),
                     )
-                    SENT -> Mms.onSent(context, ok, file, Uri.parse(intent.getStringExtra(EXTRA_MESSAGE) ?: return@thread))
+                    // The carrier can take the message and still refuse it in its reply.
+                    SENT -> Mms.onSent(
+                        context, ok && Mms.carrierAccepted(intent.getByteArrayExtra(SmsManager.EXTRA_MMS_DATA)), file,
+                        Uri.parse(intent.getStringExtra(EXTRA_MESSAGE) ?: return@thread),
+                    )
                     ACKNOWLEDGED -> File(File(context.cacheDir, "mms"), file).delete()
                 }
             } catch (e: Exception) {

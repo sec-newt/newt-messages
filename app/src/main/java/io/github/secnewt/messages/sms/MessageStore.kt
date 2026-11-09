@@ -12,6 +12,7 @@ import io.github.secnewt.messages.chats.MessageDetails
 import io.github.secnewt.messages.chats.Addressee
 import io.github.secnewt.messages.chats.Person
 import io.github.secnewt.messages.chats.Previews
+import io.github.secnewt.messages.chats.SendStatus
 import io.github.secnewt.messages.reactions.Folding
 import io.github.secnewt.messages.reactions.Reactions
 
@@ -37,6 +38,7 @@ class MessageStore(private val context: Context) {
         val columns = arrayOf(Telephony.Threads._ID, Telephony.Threads.DATE, Telephony.Threads.RECIPIENT_IDS, Telephony.Threads.SNIPPET)
         val unread = unreadByThread()
         val addresses = canonicalAddresses()
+        val failed = failedByThread()
         return resolver.query(threads, columns, null, null, "${Telephony.Threads.DATE} DESC")?.use { c ->
             buildList {
                 while (c.moveToNext()) {
@@ -44,29 +46,53 @@ class MessageStore(private val context: Context) {
                     val people = c.getString(2).orEmpty().split(' ').mapNotNull { it.toLongOrNull()?.let(addresses::get) }.map(::person)
                     if (people.isEmpty()) continue
                     val shown = Previews.fromSummary(c.getString(3).orEmpty()) ?: Previews.of(raw(id, limit = 1).lastOrNull())
-                    add(Chat(id, people, shown, c.getLong(1), unread = unread[id] ?: 0, name = groupNames.name(id), pinned = chatSettings.pinned(id), muted = chatSettings.muted(id), colors = personColors.colors(id, people), draft = drafts.draft(id)))
+                    add(Chat(id, people, shown, c.getLong(1), unread = unread[id] ?: 0, name = groupNames.name(id), pinned = chatSettings.pinned(id), muted = chatSettings.muted(id), colors = personColors.colors(id, people), draft = drafts.draft(id), failed = (failed[id] ?: 0L) >= c.getLong(1) - 1000))
                 }
             }
         }.orEmpty()
     }
 
     /** A chat's messages as shown (reactions folded onto their messages), oldest first. */
-    fun messages(threadId: Long, limit: Int = 600): List<Message> = Folding.fold(raw(threadId, limit))
+    fun messages(threadId: Long, limit: Int = PAGE): List<Message> = Folding.fold(raw(threadId, limit))
+
+    /** The newest [limit] stored messages, shown, and whether there are older ones beyond them. */
+    data class Page(val messages: List<Message>, val hasOlder: Boolean)
+
+    fun page(threadId: Long, limit: Int = PAGE): Page {
+        val sms = rawSms(threadId, limit)
+        val mms = rawMms(threadId, limit)
+        val all = (sms + mms).sortedBy { it.timeMillis }
+        // Either kind filling its limit means there may be more of it.
+        val hasOlder = sms.size >= limit || mms.size >= limit || all.size > limit
+        return Page(Folding.fold(all.takeLast(limit)), hasOlder)
+    }
 
     /** Every stored message (SMS and MMS), reactions included, oldest first. */
     fun raw(threadId: Long, limit: Int = 600): List<Message> =
         (rawSms(threadId, limit) + rawMms(threadId, limit)).sortedBy { it.timeMillis }.takeLast(limit)
 
     private fun rawSms(threadId: Long, limit: Int): List<Message> {
-        val columns = arrayOf(Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE, Telephony.Sms.TYPE)
+        val columns = arrayOf(
+            Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE, Telephony.Sms.TYPE, Telephony.Sms.STATUS,
+        )
+        val now = System.currentTimeMillis()
+        // Not drafts: another app's unsent draft isn't a message anyone sent.
         return resolver.query(
-            Telephony.Sms.CONTENT_URI, columns, "${Telephony.Sms.THREAD_ID} = ?", arrayOf(threadId.toString()),
+            Telephony.Sms.CONTENT_URI, columns,
+            "${Telephony.Sms.THREAD_ID} = ? AND ${Telephony.Sms.TYPE} != ${Telephony.Sms.MESSAGE_TYPE_DRAFT}", arrayOf(threadId.toString()),
             "${Telephony.Sms.DATE} DESC LIMIT $limit",
         )?.use { c ->
             buildList {
                 while (c.moveToNext()) {
-                    val incoming = c.getInt(4) == Telephony.Sms.MESSAGE_TYPE_INBOX
-                    add(Message(c.getLong(0), c.getString(2).orEmpty(), c.getLong(3), if (incoming) person(c.getString(1).orEmpty()) else null))
+                    val type = c.getInt(4)
+                    val incoming = type == Telephony.Sms.MESSAGE_TYPE_INBOX
+                    val date = c.getLong(3)
+                    add(
+                        Message(
+                            c.getLong(0), c.getString(2).orEmpty(), date, if (incoming) person(c.getString(1).orEmpty()) else null,
+                            status = SendStatus.ofSms(type, if (c.isNull(5)) -1 else c.getInt(5), date, now),
+                        ),
+                    )
                 }
             }.asReversed()
         }.orEmpty()
@@ -75,12 +101,15 @@ class MessageStore(private val context: Context) {
     /** Picture and group messages in a chat, oldest first. */
     private fun rawMms(threadId: Long, limit: Int, unreadOnly: Boolean = false): List<Message> {
         val columns = arrayOf(Telephony.Mms._ID, Telephony.Mms.DATE, Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_TYPE)
-        var where = "${Telephony.Mms.THREAD_ID} = ? AND $REAL_MMS"
+        var where = "${Telephony.Mms.THREAD_ID} = ? AND $REAL_MMS AND ${Telephony.Mms.MESSAGE_BOX} != ${Telephony.Mms.MESSAGE_BOX_DRAFTS}"
         if (unreadOnly) where += " AND ${Telephony.Mms.READ} = 0 AND ${Telephony.Mms.MESSAGE_BOX} = ${Telephony.Mms.MESSAGE_BOX_INBOX}"
-        data class Row(val id: Long, val date: Long, val incoming: Boolean, val waiting: Boolean)
+        data class Row(val id: Long, val date: Long, val box: Int, val waiting: Boolean) {
+            val incoming get() = box == Telephony.Mms.MESSAGE_BOX_INBOX
+        }
         val rows = resolver.query(Telephony.Mms.CONTENT_URI, columns, where, arrayOf(threadId.toString()), "${Telephony.Mms.DATE} DESC LIMIT $limit")?.use { c ->
-            buildList { while (c.moveToNext()) add(Row(c.getLong(0), c.getLong(1), c.getInt(2) == Telephony.Mms.MESSAGE_BOX_INBOX, c.getInt(3) == PduHeadersNotification)) }
+            buildList { while (c.moveToNext()) add(Row(c.getLong(0), c.getLong(1), c.getInt(2), c.getInt(3) == PduHeadersNotification)) }
         }.orEmpty()
+        val now = System.currentTimeMillis()
         // Every message's words and files in one query, instead of one per message.
         val allParts = parts(rows.filterNot { it.waiting }.map { it.id })
         return rows.map { row ->
@@ -92,6 +121,7 @@ class MessageStore(private val context: Context) {
                 -id,
                 if (waiting) "Picture or group message, not downloaded yet" else found.text,
                 row.date * 1000, from, images = found.images, files = found.files, waiting = waiting,
+                status = SendStatus.ofMms(row.box, row.date * 1000, now),
             )
         }.asReversed()
     }
@@ -247,12 +277,37 @@ class MessageStore(private val context: Context) {
         return resolver.insert(Telephony.Sms.Outbox.CONTENT_URI, values)
     }
 
-    /** Moves a sent text to Sent, or marks it failed. */
+    /**
+     * Moves a sent text to Sent, or marks it failed. A long text goes in parts: one failed part
+     * fails the whole text, and a later part going through doesn't undo that.
+     */
     fun markSent(uri: Uri, ok: Boolean) {
+        if (ok) {
+            val values = ContentValues().apply { put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_SENT) }
+            resolver.update(uri, values, "${Telephony.Sms.TYPE} != ${Telephony.Sms.MESSAGE_TYPE_FAILED}", null)
+        } else {
+            val values = ContentValues().apply { put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_FAILED) }
+            resolver.update(uri, values, null, null)
+        }
+    }
+
+    /** The carrier's delivery report: [status] as Android stores it (0 delivered, 32 pending, 64+ failed). */
+    fun markDelivered(uri: Uri, status: Int) {
+        resolver.update(uri, ContentValues().apply { put(Telephony.Sms.STATUS, status) }, null, null)
+    }
+
+    /** A failed text, back in the outbox to try again: (address, words), or null if it's gone. */
+    fun requeueSms(id: Long): Pair<String, String>? {
+        val uri = Uri.withAppendedPath(Telephony.Sms.CONTENT_URI, id.toString())
+        val found = resolver.query(uri, arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY), null, null, null)
+            ?.use { if (it.moveToFirst()) it.getString(0).orEmpty() to it.getString(1).orEmpty() else null } ?: return null
         val values = ContentValues().apply {
-            put(Telephony.Sms.TYPE, if (ok) Telephony.Sms.MESSAGE_TYPE_SENT else Telephony.Sms.MESSAGE_TYPE_FAILED)
+            put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_OUTBOX)
+            put(Telephony.Sms.STATUS, Telephony.Sms.STATUS_NONE)
+            put(Telephony.Sms.DATE, System.currentTimeMillis())
         }
         resolver.update(uri, values, null, null)
+        return found
     }
 
     /** Messages containing [query], newest first: texts, and the words in picture messages. */
@@ -361,6 +416,28 @@ class MessageStore(private val context: Context) {
             buildMap { while (c.moveToNext()) c.getString(address)?.let { put(c.getLong(id), it) } }
         }.orEmpty()
 
+    /**
+     * When each chat's newest failed message was sent: texts and picture messages marked
+     * failed, and ones stuck "sending" (the app was closed mid-send).
+     */
+    private fun failedByThread(): Map<Long, Long> {
+        val newest = mutableMapOf<Long, Long>()
+        val stuck = System.currentTimeMillis() - SendStatus.STUCK_AFTER_MILLIS
+        resolver.query(
+            Telephony.Sms.CONTENT_URI, arrayOf(Telephony.Sms.THREAD_ID, Telephony.Sms.DATE),
+            "${Telephony.Sms.TYPE} = ${Telephony.Sms.MESSAGE_TYPE_FAILED} OR (${Telephony.Sms.TYPE} IN " +
+                "(${Telephony.Sms.MESSAGE_TYPE_OUTBOX}, ${Telephony.Sms.MESSAGE_TYPE_QUEUED}) AND ${Telephony.Sms.DATE} < $stuck)",
+            null, null,
+        )?.use { c -> while (c.moveToNext()) newest.merge(c.getLong(0), c.getLong(1), ::maxOf) }
+        resolver.query(
+            Telephony.Mms.CONTENT_URI, arrayOf(Telephony.Mms.THREAD_ID, Telephony.Mms.DATE),
+            "${Telephony.Mms.MESSAGE_BOX} = ${Telephony.Mms.MESSAGE_BOX_FAILED} OR " +
+                "(${Telephony.Mms.MESSAGE_BOX} = ${Telephony.Mms.MESSAGE_BOX_OUTBOX} AND ${Telephony.Mms.DATE} < ${stuck / 1000})",
+            null, null,
+        )?.use { c -> while (c.moveToNext()) newest.merge(c.getLong(0), c.getLong(1) * 1000, ::maxOf) }
+        return newest
+    }
+
     private fun unreadByThread(): Map<Long, Int> {
         val counts = mutableMapOf<Long, Int>()
         resolver.query(
@@ -396,17 +473,20 @@ class MessageStore(private val context: Context) {
         } ?: 0
     }
 
-    private companion object {
+    companion object {
+        /** How many messages a chat shows at first, and how many more each "Show older messages" adds. */
+        const val PAGE = 600
+
         /** MMS message type 130: a notice that a message is waiting at the carrier. */
-        const val PduHeadersNotification = 130
+        private const val PduHeadersNotification = 130
 
         /**
          * Real messages only: sent (128), waiting (130) and downloaded (132). Not delivery
          * reports (134) or read reports (136), which Android also files in the inbox.
          */
-        val REAL_MMS = "${Telephony.Mms.MESSAGE_TYPE} IN (128, 130, 132)"
+        private val REAL_MMS = "${Telephony.Mms.MESSAGE_TYPE} IN (128, 130, 132)"
 
         /** Numbers compare by their last 10 digits, so "+1 (972) 555-0111" matches "9725550111". */
-        fun numberKey(number: String): String = io.github.secnewt.messages.chats.ChatColors.key(number)
+        private fun numberKey(number: String): String = io.github.secnewt.messages.chats.ChatColors.key(number)
     }
 }

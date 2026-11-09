@@ -12,7 +12,7 @@ import android.os.PersistableBundle
 import android.os.SystemClock
 import androidx.core.app.RemoteInput
 import io.github.secnewt.messages.sms.MessageStore
-import io.github.secnewt.messages.sms.SmsSender
+import io.github.secnewt.messages.sms.Outgoing
 import kotlin.concurrent.thread
 
 /** The notification buttons: Reply, Mark read, Copy a code, and clearing that copy later. */
@@ -23,12 +23,15 @@ class ActionReceiver : BroadcastReceiver() {
         when (intent.action) {
             REPLY -> {
                 val text = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(EXTRA_REPLY)?.toString()
-                val to = intent.getStringExtra(EXTRA_ADDRESS)
-                if (text.isNullOrBlank() || to.isNullOrBlank()) return
+                if (text.isNullOrBlank() || threadId < 0) return
                 background {
-                    SmsSender.send(context, to, text)
-                    MessageStore(context).markRead(threadId)
+                    // Everyone in the chat: one person gets a text, a group gets a group message.
+                    val store = MessageStore(context)
+                    val to = store.people(threadId).map { it.address }
+                    val problem = Outgoing.send(context, to, text)
+                    store.markRead(threadId)
                     Notifier(context).cancel(threadId)
+                    if (problem != null) Notifier(context).replyFailed(threadId, problem)
                 }
             }
             MARK_READ -> background {
@@ -81,7 +84,6 @@ class ActionReceiver : BroadcastReceiver() {
         const val COPY_CODE = "io.github.secnewt.messages.COPY_CODE"
         const val CLEAR_CODE = "io.github.secnewt.messages.CLEAR_CODE"
         const val EXTRA_THREAD = "thread"
-        const val EXTRA_ADDRESS = "address"
         const val EXTRA_REPLY = "reply"
         const val EXTRA_CODE = "code"
         const val CLIP_LABEL = "Sign-in code"

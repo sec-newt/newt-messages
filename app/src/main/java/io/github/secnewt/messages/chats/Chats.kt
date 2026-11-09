@@ -31,8 +31,49 @@ data class Message(
     val files: List<Attachment> = emptyList(),
     /** A picture or group message that hasn't downloaded yet (tap Download). */
     val waiting: Boolean = false,
+    /** For my own messages: still going, sent, delivered, or failed (tap Try again). */
+    val status: SendStatus = SendStatus.NONE,
 ) {
     val mine: Boolean get() = from == null
+}
+
+/** Where a message I sent has got to. Received messages are [NONE]. */
+enum class SendStatus(val label: String) {
+    NONE(""),
+    SENDING("Sending…"),
+    SENT("Sent"),
+    DELIVERED("Delivered"),
+    FAILED("Not sent"),
+    /** Sent, but the carrier reported it never reached them. */
+    NOT_DELIVERED("Not delivered"),
+    ;
+
+    /** Something went wrong: shown loudly, with Try again. */
+    val failed: Boolean get() = this == FAILED || this == NOT_DELIVERED
+
+    companion object {
+        /** Past this, a message still "sending" is stuck (the app was closed mid-send): show it as failed. */
+        const val STUCK_AFTER_MILLIS = 10 * 60_000L
+
+        /**
+         * A text's status from how Android filed it: its box (TYPE) and delivery report
+         * (STATUS: -1 none, 0 delivered, 32 pending, 64 or more failed).
+         */
+        fun ofSms(type: Int, deliveryStatus: Int, timeMillis: Long, now: Long): SendStatus = when (type) {
+            2 -> when { deliveryStatus == 0 -> DELIVERED; deliveryStatus >= 64 -> NOT_DELIVERED; else -> SENT } // Sent
+            4, 6 -> if (now - timeMillis > STUCK_AFTER_MILLIS) FAILED else SENDING // Outbox, Queued
+            5 -> FAILED
+            else -> NONE
+        }
+
+        /** A picture or group message's status from its box: 2 Sent, 4 Outbox, 5 Failed. */
+        fun ofMms(box: Int, timeMillis: Long, now: Long): SendStatus = when (box) {
+            2 -> SENT
+            4 -> if (now - timeMillis > STUCK_AFTER_MILLIS) FAILED else SENDING
+            5 -> FAILED
+            else -> NONE
+        }
+    }
 }
 
 data class Chat(
@@ -50,6 +91,8 @@ data class Chat(
     val colors: Map<String, PersonHue> = ChatColors.assign(people, emptyMap()),
     /** Words I typed here and haven't sent yet. */
     val draft: String? = null,
+    /** The newest message here is mine and didn't go (shown as "Not sent" in the list). */
+    val failed: Boolean = false,
 ) {
     val isGroup: Boolean get() = people.size > 1
     val title: String get() = name ?: people.joinToString(", ") { it.shownName }

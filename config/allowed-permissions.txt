@@ -25,3 +25,6 @@ android.permission.READ_CONTACTS
 android.permission.READ_PHONE_NUMBERS
 # Notify me of new messages.
 android.permission.POST_NOTIFICATIONS
+# Newt Phone's "starting with" block rules, so texts from those numbers arrive quietly.
+# A Newt-only (signature) permission: only apps signed with the Newt key can have it.
+io.github.secnewt.dialer.permission.BLOCK_RULES
