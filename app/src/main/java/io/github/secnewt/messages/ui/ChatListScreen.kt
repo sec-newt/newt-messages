@@ -385,7 +385,7 @@ private fun ChatRow(chat: Chat, time: String, picked: Boolean?, onLongPress: (()
                 Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
             }
         } else {
-            Avatar(chat.title, if (chat.isGroup) null else chat.people.firstOrNull()?.photo, color = if (chat.isGroup) null else chat.people.firstOrNull()?.let(chat::hue)?.fill)
+            if (chat.isGroup) GroupAvatar(chat) else Avatar(chat.title, chat.people.firstOrNull()?.photo, color = chat.people.firstOrNull()?.let(chat::hue)?.fill)
         }
         Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -468,6 +468,38 @@ fun Avatar(name: String, photo: String?, size: Int = 48, color: Color? = null) {
     }
 }
 
+/**
+ * A group: two of its people overlapping, each on their own color, so groups look different
+ * from each other at a glance (not all one letter). The letters stay this size at any text size.
+ */
+@Composable
+fun GroupAvatar(chat: Chat, size: Int = 48) {
+    val two = chat.people.take(2)
+    val small = (size * 0.66f).toInt()
+    val letter = with(androidx.compose.ui.platform.LocalDensity.current) { maxOf(17f, small * 0.55f).dp.toSp() }
+    val ring = MaterialTheme.colorScheme.background
+    Box(Modifier.size(size.dp)) {
+        two.forEachIndexed { i, person ->
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .align(if (i == 0) Alignment.TopStart else Alignment.BottomEnd)
+                    .size(small.dp)
+                    .background(ring, CircleShape)
+                    .padding(1.5.dp)
+                    .background(chat.hue(person).fill, CircleShape),
+            ) {
+                Text(
+                    person.shownName.firstOrNull { it.isLetterOrDigit() }?.uppercase() ?: "#",
+                    fontSize = letter,
+                    fontWeight = FontWeight.Bold,
+                    color = OnPersonColor,
+                )
+            }
+        }
+    }
+}
+
 /** A person's (or group's) first letter on their color. */
 @Composable
 fun Initial(name: String, size: Int = 48, color: Color? = null) {
@@ -493,9 +525,21 @@ private fun ChatTabBar(chats: List<Chat>, selected: ChatTab, onSelect: (ChatTab)
             NavigationBarItem(
                 selected = tab == selected,
                 onClick = { onSelect(tab) },
+                // The count sits beside the icon, not on top of it, so it stays readable at large text.
                 icon = {
-                    BadgedBox(badge = { if (unread > 0) Badge { Text(unread.toString()) } }) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Icon(tab.icon, contentDescription = null)
+                        if (unread > 0) {
+                            Text(
+                                if (unread > 99) "99+" else unread.toString(),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (tab == selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onError,
+                                modifier = Modifier
+                                    .background(if (tab == selected) Color.Transparent else MaterialTheme.colorScheme.error, androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                                    .padding(horizontal = 6.dp),
+                            )
+                        }
                     }
                 },
                 label = {

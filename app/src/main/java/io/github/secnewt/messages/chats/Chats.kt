@@ -9,7 +9,31 @@ data class Person(
     /** Their contact, for View contact / Edit contact. */
     val contact: String? = null,
 ) {
-    val shownName: String get() = name ?: address
+    val shownName: String get() = name ?: PhoneFormat.pretty(address)
+
+    /** What picks their color when nobody chose one: unchanged by how the number is shown. */
+    val colorName: String get() = name ?: address
+}
+
+/** Phone numbers the way people write them. */
+object PhoneFormat {
+    /**
+     * "(214) 555-0155" for a US number, with or without its +1, so it fits on one line and
+     * reads the way it's said. Short codes, named senders and other countries' numbers are
+     * left as they came.
+     */
+    fun pretty(address: String): String {
+        val trimmed = address.trim()
+        if (trimmed.any { it.isLetter() }) return trimmed
+        if (trimmed.any { !it.isDigit() && it !in "+-(). " }) return trimmed
+        val digits = trimmed.filter { it.isDigit() }
+        val national = when {
+            digits.length == 10 && !trimmed.startsWith("+") -> digits
+            digits.length == 11 && digits.startsWith("1") && (trimmed.startsWith("+1") || !trimmed.startsWith("+")) -> digits.substring(1)
+            else -> return trimmed
+        }
+        return "(${national.substring(0, 3)}) ${national.substring(3, 6)}-${national.substring(6)}"
+    }
 }
 
 /** A file in a picture message that isn't a picture: a PDF, a contact card, audio, video. */
@@ -98,7 +122,7 @@ data class Chat(
     val title: String get() = name ?: people.joinToString(", ") { it.shownName }
 
     /** Someone's color in this chat (someone no longer in it gets the color their name picks). */
-    fun hue(person: Person): PersonHue = colors[ChatColors.key(person.address)] ?: PersonHue.fromName(person.shownName)
+    fun hue(person: Person): PersonHue = colors[ChatColors.key(person.address)] ?: PersonHue.fromName(person.colorName)
 }
 
 /** The three tabs. */

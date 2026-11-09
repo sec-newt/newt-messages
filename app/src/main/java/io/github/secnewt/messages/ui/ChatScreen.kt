@@ -1,6 +1,14 @@
 package io.github.secnewt.messages.ui
 
 import io.github.secnewt.ui.newtStripe
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.heading
+import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.BorderStroke
@@ -81,10 +89,10 @@ fun ChatScreen(
     onShowOlder: (() -> Unit)? = null,
     /** Send one of my messages again after it failed. */
     onRetry: ((Message) -> Unit)? = null,
-    /** Attach something to send; [attached] says what's attached, if anything. */
+    /** Attach something to send; [attached] is what's attached so far, shown as small pictures. */
     onAttach: ((AttachKind) -> Unit)? = null,
-    attached: String? = null,
-    onRemoveAttachment: () -> Unit = {},
+    attached: List<io.github.secnewt.messages.chats.Attachment> = emptyList(),
+    onRemoveAttachment: (io.github.secnewt.messages.chats.Attachment) -> Unit = {},
     /** Keep a copy of a picture or file: (address, name, type). */
     onSave: ((String, String, String) -> Unit)? = null,
     /** Who's in the chat, renaming, adding or removing people, deleting. */
@@ -100,6 +108,8 @@ fun ChatScreen(
     onAddNumberToContacts: ((String) -> Unit)? = null,
     /** Who a message was really from and to, and when (read from the message store). */
     loadDetails: (suspend (Message) -> io.github.secnewt.messages.chats.MessageDetails?)? = null,
+    /** Now, for "Today" and "Yesterday" between days. */
+    now: Long = System.currentTimeMillis(),
 ) {
     var acting by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Message?>(null) }
     var reactionsOf by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Message?>(null) }
@@ -177,8 +187,8 @@ fun ChatScreen(
                 )
             } else {
                 Column {
-                    if (attached != null) AttachmentLine(attached, onRemoveAttachment)
-                    ComposeBar(draft, onDraftChange, onSend, onAttach, canSend = draft.isNotBlank() || attached != null)
+                    if (attached.isNotEmpty()) AttachmentStrip(attached, onRemoveAttachment)
+                    ComposeBar(draft, onDraftChange, onSend, onAttach, canSend = draft.isNotBlank() || attached.isNotEmpty())
                 }
             }
         },
@@ -193,16 +203,29 @@ fun ChatScreen(
         androidx.compose.runtime.LaunchedEffect(newest?.id) {
             if (newest != null && (newest.mine || list.firstVisibleItemIndex <= 1)) list.animateScrollToItem(0)
         }
+        // Scrolled back up: a "Newest" button to jump down, counting messages that came since.
+        val away by androidx.compose.runtime.remember { androidx.compose.runtime.derivedStateOf { list.firstVisibleItemIndex > 2 } }
+        var seen by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(newest?.id) }
+        androidx.compose.runtime.LaunchedEffect(away, newest?.id) { if (!away) seen = newest?.id }
+        val unseen = messages.indexOfLast { it.id == seen }.let { at -> if (at < 0) 0 else messages.size - 1 - at }
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        // Who sent what, grouped: the name once, the picture and time once, a line between days.
+        val places = androidx.compose.runtime.remember(messages, now) { io.github.secnewt.messages.chats.Timeline.place(messages, now) }
+        Box(Modifier.fillMaxSize().padding(padding)) {
         LazyColumn(
             state = list,
-            modifier = Modifier.fillMaxSize().padding(padding),
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
             reverseLayout = true,
         ) {
-            items(messages.asReversed(), key = { it.id }) { message ->
+            // Newest first, since the list is drawn bottom-up; a day's line goes after (above) its first message.
+            for (i in messages.indices.reversed()) {
+                val message = messages[i]
+                val place = places[i]
+                item(key = message.id) {
                 Bubble(
                     message, hue = message.from?.let(chat::hue), showName = chat.isGroup, time = time(message.timeMillis),
+                    first = place.first, last = place.last,
                     onDownload = { onDownload(message) }, onOpenPicture = { viewing = it }, onSave = onSave,
                     onOptions = { acting = message },
                     onShowReactions = { reactionsOf = message },
@@ -210,6 +233,8 @@ fun ChatScreen(
                     showStatus = message.id == newestMine || message.status == SendStatus.SENDING || message.status.failed,
                     onRetry = onRetry?.let { retry -> { retry(message) } },
                 )
+                }
+                place.day?.let { day -> item(key = "day-${message.id}") { DayLine(day) } }
             }
             // At the top, above the oldest message shown (the list is drawn bottom-up).
             if (onShowOlder != null) {
@@ -222,7 +247,40 @@ fun ChatScreen(
                 }
             }
         }
+        if (away) {
+            JumpToNewest(unseen, Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
+                scope.launch { list.animateScrollToItem(0) }
+            }
+        }
+        }
     }
+}
+
+/** "Today", "Yesterday" or "Mon, Nov 3", centered between two lines where the day changes. */
+@Composable
+private fun DayLine(day: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 4.dp).semantics { heading() },
+    ) {
+        androidx.compose.material3.HorizontalDivider(Modifier.weight(1f))
+        Text(day, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        androidx.compose.material3.HorizontalDivider(Modifier.weight(1f))
+    }
+}
+
+/** Back down to the newest message, saying how many came in while scrolled up. */
+@Composable
+private fun JumpToNewest(unseen: Int, modifier: Modifier, onClick: () -> Unit) {
+    io.github.secnewt.ui.NewtPrimaryButton(
+        if (unseen > 0) "$unseen new" else "Newest",
+        onClick = onClick,
+        icon = Icons.Filled.KeyboardArrowDown,
+        modifier = modifier.semantics {
+            contentDescription = if (unseen > 0) "Go to newest message, $unseen new" else "Go to newest message"
+        },
+    )
 }
 
 @Composable
@@ -232,6 +290,9 @@ private fun Bubble(
     hue: io.github.secnewt.messages.chats.PersonHue?,
     showName: Boolean,
     time: String,
+    /** First of a run from one person (name shows) and last (picture and time show). */
+    first: Boolean = true,
+    last: Boolean = true,
     onDownload: () -> Unit,
     onOpenPicture: (String) -> Unit,
     onSave: ((String, String, String) -> Unit)?,
@@ -261,7 +322,8 @@ private fun Bubble(
     }
     Row(
         // The whole row (avatar, bubble and the space beside it) is the long-press target.
-        modifier = Modifier.fillMaxWidth()
+        // Grouped messages sit close; a new person or a pause gets room above.
+        modifier = Modifier.fillMaxWidth().padding(top = if (first) 12.dp else 3.dp)
             .then(if (onOptions != null) Modifier.pointerInput(onOptions) { detectTapGestures(onLongPress = { onOptions() }) } else Modifier)
             .then(
             if (canRetry || message.waiting || message.images.isNotEmpty() || message.files.isNotEmpty() || Links.find(message.body).isNotEmpty()) {
@@ -277,7 +339,8 @@ private fun Bubble(
         verticalAlignment = Alignment.Bottom,
     ) {
         if (showName && who != null && hue != null) {
-            Avatar(who, message.from?.photo, size = 36, color = hue.fill)
+            // Once per run, beside its last message; the others keep its space so they line up.
+            if (last) Avatar(who, message.from?.photo, size = 36, color = hue.fill) else Spacer(Modifier.width(36.dp))
         }
         Column(
             horizontalAlignment = if (message.mine) Alignment.End else Alignment.Start,
@@ -285,7 +348,14 @@ private fun Bubble(
         ) {
             // Mine: the solid gradient, so "me vs. them" reads from across the room. Theirs: a stripe
             // of their color down the edge, and in groups their name inside the bubble.
-            val shape = RoundedCornerShape(16.dp)
+            // Grouped bubbles join: the corners where they meet are tighter.
+            val joinTop = if (first) 16.dp else 6.dp
+            val joinBottom = if (last) 16.dp else 6.dp
+            val shape = if (message.mine) {
+                RoundedCornerShape(topStart = 16.dp, topEnd = joinTop, bottomEnd = joinBottom, bottomStart = 16.dp)
+            } else {
+                RoundedCornerShape(topStart = joinTop, topEnd = 16.dp, bottomEnd = 16.dp, bottomStart = joinBottom)
+            }
             val ink = if (message.mine) io.github.secnewt.ui.onNewtGradient() else MaterialTheme.colorScheme.onSurface
             val dim = if (message.mine) io.github.secnewt.ui.onNewtGradient() else MaterialTheme.colorScheme.onSurfaceVariant
             Column(
@@ -303,7 +373,7 @@ private fun Bubble(
                     )
                     .padding(start = if (message.mine) 14.dp else 18.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
             ) {
-                if (showName && who != null) {
+                if (showName && who != null && first) {
                     // On dark, the name is in the person's color. On light those hues can't reach
                     // 7:1 as text, so the name stays dark; the stripe carries the color.
                     Text(
@@ -337,7 +407,7 @@ private fun Bubble(
                         Text("Download", style = MaterialTheme.typography.titleMedium, color = ink)
                     }
                 }
-                Text(time, fontFamily = io.github.secnewt.ui.NewtFonts.Mono, fontSize = 16.sp, color = dim)
+                if (last) Text(time, fontFamily = io.github.secnewt.ui.NewtFonts.Mono, fontSize = 16.sp, color = dim)
             }
             if (status != null) SendStatusLine(status, if (canRetry) onRetry else null)
             if (message.reactions.isNotEmpty()) {
@@ -460,15 +530,68 @@ private fun MmsImage(uri: String, onLongPress: (() -> Unit)? = null, onOpen: () 
     }
 }
 
+/**
+ * What's attached so far, as small pictures (a picture's own thumbnail; a file's name), each
+ * with its own Remove button.
+ */
 @Composable
-private fun AttachmentLine(label: String, onRemove: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+private fun AttachmentStrip(attached: List<io.github.secnewt.messages.chats.Attachment>, onRemove: (io.github.secnewt.messages.chats.Attachment) -> Unit) {
+    androidx.compose.foundation.lazy.LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     ) {
-        Text("📷 $label", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-        androidx.compose.material3.TextButton(onClick = onRemove, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text("Remove", style = MaterialTheme.typography.titleMedium)
+        // No keys: the same file attached twice must not crash the list.
+        items(attached) { file -> AttachmentTile(file) { onRemove(file) } }
+    }
+}
+
+@Composable
+private fun AttachmentTile(file: io.github.secnewt.messages.chats.Attachment, onRemove: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val picture = file.type.startsWith("image/") || file.type.startsWith("video/")
+    val image by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, file.uri) {
+        if (picture) value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Pictures.preview(context, file.uri, file.type) }
+    }
+    val shape = RoundedCornerShape(12.dp)
+    Box(Modifier.size(width = 112.dp, height = 112.dp)) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.fillMaxSize().clip(shape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .border(io.github.secnewt.ui.neonOutline(), shape),
+        ) {
+            val loaded = image
+            if (loaded != null) {
+                androidx.compose.foundation.Image(
+                    loaded, contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                if (file.type.startsWith("video/")) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(40.dp).background(Color.Black.copy(alpha = 0.6f), CircleShape))
+                }
+            } else {
+                Text(
+                    (if (file.type.startsWith("text/x-vcard") || file.type.startsWith("text/vcard")) "👤 " else "📎 ") + file.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 3,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(8.dp),
+                )
+            }
+        }
+        // Remove, in the corner: a dark circle with a white ✕, big enough to hit.
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.align(Alignment.TopEnd).size(48.dp)
+                .clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "Remove") { onRemove() }
+                .semantics { contentDescription = "Remove ${file.name}" },
+        ) {
+            Icon(
+                Icons.Filled.Close, contentDescription = null, tint = Color.White,
+                modifier = Modifier.size(32.dp).background(Color.Black.copy(alpha = 0.75f), CircleShape).border(1.5.dp, Color.White, CircleShape).padding(4.dp),
+            )
         }
     }
 }

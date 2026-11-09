@@ -10,3 +10,25 @@ It follows the [house style](NEWT_STYLE.md).
 
 Releases are built and signed by GitHub Actions. Install and update with
 Obtainium from this repository's Releases page.
+
+## Using it
+
+### Chats
+
+- **Days:** a line saying "Today", "Yesterday", or a date like "Mon, Nov 3" shows where
+  each day starts.
+- **Messages close together are grouped.** Several messages from one person in a few
+  minutes show their name once at the top, and their picture and the time once at the
+  bottom.
+- **Newest:** scroll back up, and a **Newest** button shows in the corner. It says how
+  many new messages came in ("3 new"); tap it to jump back down.
+- **Attaching:** tap **+**. What's attached shows as small pictures above the message
+  box. Tap the **✕** on one to take just that one off.
+
+### Lists and details
+
+- Numbers that aren't saved as contacts show the usual way: (214) 555-0155.
+- Group chats show two of their people's colors, so groups are easy to tell apart.
+- The People, Groups and Codes tabs show their unread count beside the icon.
+- **Group details:** each person is one short row. Tap it to text, call, change their
+  color, add them to contacts, remove them, or block them.

@@ -16,6 +16,8 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.performScrollTo
@@ -70,7 +72,7 @@ class ChatScreensTest {
     }
 
     private val family = @androidx.compose.runtime.Composable {
-        ChatScreen(SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {}, time = SampleChats.time)
+        ChatScreen(SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {}, time = SampleChats.time, now = SampleChats.NOW)
     }
 
     @Test fun groupChatDark() = composeRule.newtScreenshot("chat-group-dark", dark = true, content = family)
@@ -137,7 +139,7 @@ class ChatScreensTest {
     private val withProblems = @androidx.compose.runtime.Composable {
         ChatScreen(
             SampleChats.chats[0], sendingProblems, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
-            time = SampleChats.time, onRetry = {},
+            time = SampleChats.time, onRetry = {}, now = SampleChats.NOW,
         )
     }
 
@@ -205,7 +207,11 @@ class ChatScreensTest {
     fun attachingAPicture() = composeRule.newtScreenshot("chat-attached-dark", dark = true) {
         ChatScreen(
             SampleChats.family, SampleChats.familyMessages, draft = "Look at this", onDraftChange = {}, onSend = {}, onBack = {},
-            time = SampleChats.time, onAttach = {}, attached = "photo.jpg, bulletin.pdf",
+            time = SampleChats.time, onAttach = {}, now = SampleChats.NOW,
+            attached = listOf(
+                io.github.secnewt.messages.chats.Attachment("content://test/photo", "photo.jpg", "image/jpeg"),
+                io.github.secnewt.messages.chats.Attachment("content://test/bulletin", "bulletin.pdf", "application/pdf"),
+            ),
         )
     }
 
@@ -307,7 +313,7 @@ class ChatScreensTest {
     fun unknownNumbersCanBeAddedToContacts() {
         var added: String? = null
         composeRule.setContent { io.github.secnewt.ui.NewtTheme(darkTheme = true) { Details(onAddToContacts = { added = it.address }) } }
-        openMore("+14695550199")
+        openMore("(469) 555-0199")
         composeRule.onNodeWithText("Add to contacts").performClick()
         assertEquals("+14695550199", added)
     }
@@ -734,7 +740,7 @@ class ChatScreensTest {
     @Test
     fun groupDetailsWritesEachColorAndHidesDangerBehindMore() {
         composeRule.setContent { NewtTheme(darkTheme = true) { Details() } }
-        composeRule.onNodeWithText("Yellow · +19725550111", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("Yellow · (972) 555-0111", useUnmergedTree = true).assertExists()
         composeRule.onNodeWithText("Block Becca").assertDoesNotExist()
         composeRule.onNodeWithText("Remove from group").assertDoesNotExist()
         openMore("Becca")
@@ -831,5 +837,44 @@ class ChatScreensTest {
         ).forEach { composeRule.onNodeWithText(it).assertExists() }
         composeRule.onNodeWithText("Close").performClick()
         composeRule.onAllNodesWithText("Jerry · 9725550199").assertCountEquals(0)
+    }
+
+    @Test
+    fun aDayLineShowsAboveTheDaysMessages() {
+        composeRule.setContent { NewtTheme(darkTheme = true) { family() } }
+        composeRule.onNode(hasScrollAction()).performScrollToNode(androidx.compose.ui.test.hasText("Today"))
+        composeRule.onNodeWithText("Today").assertIsDisplayed()
+    }
+
+    @Test
+    fun eachAttachmentCanBeRemovedOnItsOwn() {
+        val photo = io.github.secnewt.messages.chats.Attachment("content://test/photo", "photo.jpg", "image/jpeg")
+        val pdf = io.github.secnewt.messages.chats.Attachment("content://test/bulletin", "bulletin.pdf", "application/pdf")
+        var removed: io.github.secnewt.messages.chats.Attachment? = null
+        composeRule.setContent {
+            NewtTheme(darkTheme = true) {
+                ChatScreen(
+                    SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
+                    time = SampleChats.time, onAttach = {}, attached = listOf(photo, pdf, photo), onRemoveAttachment = { removed = it },
+                )
+            }
+        }
+        composeRule.onNodeWithContentDescription("Remove bulletin.pdf").performClick()
+        assertEquals(pdf, removed)
+    }
+
+    @Test
+    fun scrolledUpThereIsAWayBackToTheNewest() {
+        val many = (1..40).map { i -> io.github.secnewt.messages.chats.Message(i.toLong(), "Message $i", i * 600_000L, if (i % 2 == 0) SampleChats.becca else null) }
+        composeRule.setContent {
+            NewtTheme(darkTheme = true) {
+                ChatScreen(SampleChats.chats[0], many, draft = "", onDraftChange = {}, onSend = {}, onBack = {}, time = SampleChats.time)
+            }
+        }
+        composeRule.onAllNodesWithContentDescription("Go to newest message").assertCountEquals(0)
+        composeRule.onNode(hasScrollAction()).performScrollToIndex(30)
+        composeRule.onNodeWithContentDescription("Go to newest message").assertIsDisplayed().performClick()
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithContentDescription("Go to newest message").assertCountEquals(0)
     }
 }
