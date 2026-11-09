@@ -877,4 +877,31 @@ class ChatScreensTest {
         composeRule.waitForIdle()
         composeRule.onAllNodesWithContentDescription("Go to newest message").assertCountEquals(0)
     }
+
+    private val media = listOf(
+        io.github.secnewt.messages.chats.Message(
+            -20, "Look at the puppy", 10 * SampleChats.HOUR, SampleChats.becca,
+            files = listOf(io.github.secnewt.messages.chats.Attachment("content://test/video", "puppy.mp4", "video/mp4")),
+        ),
+        io.github.secnewt.messages.chats.Message(
+            -21, "", 11 * SampleChats.HOUR, SampleChats.becca,
+            files = listOf(io.github.secnewt.messages.chats.Attachment("content://test/voice", "Audio Message.m4a", "audio/mp4")),
+        ),
+    )
+    private val mediaChat = @androidx.compose.runtime.Composable {
+        ChatScreen(
+            SampleChats.chats[0], media, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
+            time = SampleChats.time, now = SampleChats.NOW, onSave = { _, _, _ -> },
+        )
+    }
+
+    @Test fun mediaDark() = composeRule.newtScreenshot("chat-media-dark", dark = true, content = mediaChat)
+    @Test fun mediaLargeText() = composeRule.newtScreenshot("chat-media-200pct", dark = false, fontScale = 2f, content = mediaChat)
+
+    @Test
+    fun videosAndVoiceMessagesHaveWordedButtons() {
+        composeRule.setContent { NewtTheme(darkTheme = true) { mediaChat() } }
+        composeRule.onNodeWithContentDescription("Play video", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Play Audio Message.m4a").assertIsDisplayed()
+    }
 }

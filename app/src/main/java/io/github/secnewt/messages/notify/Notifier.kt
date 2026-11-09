@@ -72,7 +72,12 @@ class Notifier(private val context: Context) {
         val senders = mutableMapOf<String, NotificationPerson>()
         unread.forEach { message ->
             val from = message.from?.let { p -> senders.getOrPut(p.address) { Conversations.notificationPerson(context, p) } }
-            style.addMessage(message.body, message.timeMillis, from)
+            // A picture shows in the notification itself; its words (or "📷 Picture") go with it.
+            val line = NotificationCompat.MessagingStyle.Message(
+                message.body.ifBlank { io.github.secnewt.messages.chats.Previews.of(message) }, message.timeMillis, from,
+            )
+            message.images.firstOrNull()?.let { NotifyPictures.share(context, it) }?.let { line.setData("image/jpeg", it) }
+            style.addMessage(line)
         }
 
         val builder = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
