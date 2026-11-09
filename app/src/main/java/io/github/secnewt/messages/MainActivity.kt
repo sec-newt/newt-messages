@@ -573,8 +573,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun retry(message: Message) {
-        val (notice, location) = MessageStore(this).waitingNotice(message.id) ?: return
-        Mms.download(this, notice, location, -1)
+        // On the SIM it came in on (the carrier only hands it to that line).
+        val waiting = MessageStore(this).waitingNotice(message.id) ?: return
+        Mms.download(this, waiting.notice, waiting.location, waiting.subscription)
     }
 
     private fun time(millis: Long): String =
