@@ -27,6 +27,15 @@ class Blocking(private val context: Context) {
         false
     }
 
+    /** Every blocked number, as it was entered. Empty if Android won't say. */
+    fun all(): List<String> = try {
+        context.contentResolver.query(BlockedNumbers.CONTENT_URI, arrayOf(BlockedNumbers.COLUMN_ORIGINAL_NUMBER), null, null, null)?.use { c ->
+            buildList { while (c.moveToNext()) c.getString(0)?.let(::add) }
+        }.orEmpty()
+    } catch (e: Exception) {
+        emptyList()
+    }
+
     fun unblock(number: String): Boolean = try {
         BlockedNumberContract.unblock(context, number) > 0
     } catch (e: Exception) {

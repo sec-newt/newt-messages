@@ -216,6 +216,7 @@ class MainActivity : ComponentActivity() {
             BackHandler { showSettings = false }
             val store = io.github.secnewt.messages.settings.SettingsStore(this)
             var current by androidx.compose.runtime.remember { mutableStateOf(store.settings()) }
+            var blocked by androidx.compose.runtime.remember { mutableStateOf(io.github.secnewt.messages.chats.Blocking(this).all()) }
             io.github.secnewt.messages.ui.SettingsScreen(
                 current,
                 onChange = {
@@ -223,6 +224,12 @@ class MainActivity : ComponentActivity() {
                     store.save(it)
                 },
                 onBack = { showSettings = false },
+                blocked = blocked,
+                onUnblock = { number ->
+                    io.github.secnewt.messages.chats.Blocking(this).unblock(number)
+                    blocked = io.github.secnewt.messages.chats.Blocking(this).all()
+                },
+                version = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull().orEmpty(),
                 onOpenVoiceSettings = { runCatching { startActivity(Intent("com.android.settings.TTS_SETTINGS")) } },
                 onTestVoice = {
                     io.github.secnewt.messages.settings.Speaker.speak(
@@ -433,6 +440,15 @@ class MainActivity : ComponentActivity() {
                 }
             },
             onDeleteMessage = { message -> Thread { MessageStore(this).deleteMessage(message.id) }.start() },
+            onCopyCode = { code ->
+                // The same as the notification's Copy: marked private, cleared in a couple of minutes.
+                sendBroadcast(
+                    Intent(this, io.github.secnewt.messages.notify.ActionReceiver::class.java)
+                        .setAction(io.github.secnewt.messages.notify.ActionReceiver.COPY_CODE)
+                        .putExtra(io.github.secnewt.messages.notify.ActionReceiver.EXTRA_CODE, code),
+                )
+                Toast.makeText(this, "Code copied. It's cleared from the clipboard in 2 minutes.", Toast.LENGTH_LONG).show()
+            },
             onForward = { message ->
                 // Forwarding works like sharing from another app: back to the chat list to pick
                 // a chat (or start one), where the words and pictures wait in the message box.
@@ -573,6 +589,13 @@ class MainActivity : ComponentActivity() {
                 store.markRead(it.threadId)
                 Notifier(this).cancel(it.threadId)
             }
+            // Archiving puts a chat away read: what's in it has been dealt with.
+            io.github.secnewt.messages.ui.BulkAction.ARCHIVE -> picked.forEach {
+                store.markRead(it.threadId)
+                Notifier(this).cancel(it.threadId)
+                settings.setArchived(it.threadId, true)
+            }
+            io.github.secnewt.messages.ui.BulkAction.UNARCHIVE -> picked.forEach { settings.setArchived(it.threadId, false) }
             io.github.secnewt.messages.ui.BulkAction.BLOCK -> {
                 val blocking = io.github.secnewt.messages.chats.Blocking(this)
                 val failed = picked.flatMap { it.people }.distinctBy { it.address }.count { !blocking.block(it.address) }

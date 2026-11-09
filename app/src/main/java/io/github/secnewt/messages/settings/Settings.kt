@@ -9,6 +9,13 @@ enum class ReactionNotify(val label: String, val explanation: String) {
     LIKE_A_TEXT("Like a text", "With sound, like any message"),
 }
 
+/** What a notification shows while the phone is locked. */
+enum class LockScreen(val label: String, val explanation: String) {
+    SHOW("Show messages", "Who it's from and what it says, as far as Android's own lock screen setting allows"),
+    HIDE_WORDS("Hide what they say", "Who it's from, but not the words or pictures"),
+    HIDE_ALL("Hide everything", "Nothing on the lock screen; unlock to see"),
+}
+
 /** Saying who a message is from, out loud. */
 enum class SpeakMode(val label: String, val explanation: String) {
     OFF("Off", "Never speak"),
@@ -23,6 +30,8 @@ data class MessagesSettings(
     val quietDuringDnd: Boolean = true,
     /** Read the message out after who it's from (never a sign-in code). */
     val readMessage: Boolean = false,
+    /** What notifications show on the lock screen. */
+    val lockScreen: LockScreen = LockScreen.SHOW,
 )
 
 /** The app's settings and each chat's own (pinned, muted), in its private storage. */
@@ -37,6 +46,7 @@ class SettingsStore(context: Context) {
             speak = enumOr(prefs.getString("speak", null), defaults.speak),
             quietDuringDnd = prefs.getBoolean("quiet_during_dnd", defaults.quietDuringDnd),
             readMessage = prefs.getBoolean("read_message", defaults.readMessage),
+            lockScreen = enumOr(prefs.getString("lock_screen", null), defaults.lockScreen),
         )
     }
 
@@ -46,6 +56,7 @@ class SettingsStore(context: Context) {
             .putString("speak", settings.speak.name)
             .putBoolean("quiet_during_dnd", settings.quietDuringDnd)
             .putBoolean("read_message", settings.readMessage)
+            .putString("lock_screen", settings.lockScreen.name)
             .apply()
     }
 
@@ -54,6 +65,22 @@ class SettingsStore(context: Context) {
 
     fun muted(threadId: Long): Boolean = threadId.toString() in prefs.getStringSet("muted", emptySet()).orEmpty()
     fun setMuted(threadId: Long, on: Boolean) = toggle("muted", threadId, on)
+
+    /**
+     * Archived chats, out of the tabs until someone writes again: a chat stays archived only
+     * while its newest message is no newer than when it was archived.
+     */
+    fun archived(threadId: Long, lastTimeMillis: Long): Boolean =
+        Archive.isArchived(archivedAt(threadId), lastTimeMillis)
+
+    fun setArchived(threadId: Long, on: Boolean, now: Long = System.currentTimeMillis()) {
+        val kept = prefs.getStringSet("archived", emptySet()).orEmpty().filterNot { it.substringBefore(':') == threadId.toString() }.toMutableSet()
+        if (on) kept += "$threadId:$now"
+        prefs.edit().putStringSet("archived", kept).apply()
+    }
+
+    private fun archivedAt(threadId: Long): Long? = prefs.getStringSet("archived", emptySet()).orEmpty()
+        .firstOrNull { it.substringBefore(':') == threadId.toString() }?.substringAfter(':')?.toLongOrNull()
 
     private fun toggle(key: String, threadId: Long, on: Boolean) {
         val set = prefs.getStringSet(key, emptySet()).orEmpty().toMutableSet()
@@ -93,4 +120,10 @@ object Speaking {
         }
         return if (group != null) "Message from $who, in $group" else "Message from $who"
     }
+}
+
+/** Archiving, kept free of Android so it can be tested. */
+object Archive {
+    /** Archived at [archivedAt]; a message that came after brings the chat back. */
+    fun isArchived(archivedAt: Long?, lastTimeMillis: Long): Boolean = archivedAt != null && lastTimeMillis <= archivedAt
 }

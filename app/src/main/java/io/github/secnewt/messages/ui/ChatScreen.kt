@@ -1,6 +1,9 @@
 package io.github.secnewt.messages.ui
 
 import io.github.secnewt.ui.newtStripe
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.filled.Close
@@ -100,6 +103,8 @@ fun ChatScreen(
     /** React to a message with an emoji (or take it back). */
     onReact: ((Message, String) -> Unit)? = null,
     onDeleteMessage: ((Message) -> Unit)? = null,
+    /** Copy a sign-in code from a message (marked private, cleared in a couple of minutes). */
+    onCopyCode: ((String) -> Unit)? = null,
     /** Send a message's words and pictures on to another chat. */
     onForward: ((Message) -> Unit)? = null,
     /** A phone number in a message: call it, text it, or add it to contacts. */
@@ -111,6 +116,47 @@ fun ChatScreen(
     /** Now, for "Today" and "Yesterday" between days; null keeps the phone's clock (checked each minute). */
     now: Long? = null,
 ) {
+    // Deleting a message: it goes from the screen at once, with Undo for a few seconds; only
+    // then is it really deleted (or straight away if the chat is closed first).
+    var pendingDelete by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(setOf<Long>()) }
+    val snackbar = androidx.compose.runtime.remember { androidx.compose.material3.SnackbarHostState() }
+    val undoScope = androidx.compose.runtime.rememberCoroutineScope()
+    val allMessages = androidx.compose.runtime.rememberUpdatedState(messages)
+    val committed = androidx.compose.runtime.remember { mutableSetOf<Long>() }
+    val deleteNow = androidx.compose.runtime.rememberUpdatedState(onDeleteMessage)
+    fun commit(id: Long) {
+        if (!committed.add(id)) return
+        allMessages.value.firstOrNull { it.id == id }?.let { m -> deleteNow.value?.invoke(m) }
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { pendingDelete.forEach(::commit) }
+    }
+    val deleteWithUndo: ((Message) -> Unit)? = onDeleteMessage?.let {
+        { message ->
+            pendingDelete = pendingDelete + message.id
+            undoScope.launch {
+                val result = snackbar.showSnackbar("Message deleted", actionLabel = "Undo", duration = androidx.compose.material3.SnackbarDuration.Long)
+                if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                    pendingDelete = pendingDelete - message.id
+                } else {
+                    commit(message.id)
+                }
+            }
+        }
+    }
+    @Suppress("NAME_SHADOWING")
+    val messages = if (pendingDelete.isEmpty()) messages else messages.filterNot { it.id in pendingDelete }
+
+    // Find in this chat: matching messages, newest first; Older and Newer step through them.
+    var finding by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    var findQuery by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf("") }
+    var findAt by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableIntStateOf(0) }
+    val found = androidx.compose.runtime.remember(messages, findQuery) {
+        val q = findQuery.trim()
+        if (q.isEmpty()) emptyList() else messages.filter { it.body.contains(q, ignoreCase = true) }.map { it.id }.asReversed()
+    }
+    if (findAt >= found.size) findAt = 0
+    if (finding) androidx.activity.compose.BackHandler { finding = false; findQuery = "" }
     var acting by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Message?>(null) }
     var reactionsOf by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Message?>(null) }
     var selecting by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Message?>(null) }
@@ -135,7 +181,7 @@ fun ChatScreen(
             onSelect = { acting = null; selecting = message },
             onForward = onForward?.let { forward -> { acting = null; forward(message) } },
             onDetails = if (loadDetails != null) ({ acting = null; detailsOf = message }) else null,
-            onDelete = onDeleteMessage?.let { delete -> { acting = null; delete(message) } },
+            onDelete = deleteWithUndo?.let { delete -> { acting = null; delete(message) } },
             onDismiss = { acting = null },
         )
     }
@@ -161,7 +207,30 @@ fun ChatScreen(
         )
     }
     Scaffold(
+        snackbarHost = {
+            androidx.compose.material3.SnackbarHost(snackbar) { data ->
+                // Big words and a big Undo, not Material's small ones.
+                androidx.compose.material3.Snackbar(
+                    action = {
+                        data.visuals.actionLabel?.let { label ->
+                            androidx.compose.material3.TextButton(onClick = { data.performAction() }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                Text(label, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.inversePrimary)
+                            }
+                        }
+                    },
+                    modifier = Modifier.padding(12.dp),
+                ) { Text(data.visuals.message, style = MaterialTheme.typography.bodyLarge) }
+            }
+        },
         topBar = {
+            if (finding) {
+                FindBar(
+                    findQuery, onQuery = { findQuery = it; findAt = 0 }, count = found.size, at = findAt,
+                    onOlder = { if (found.isNotEmpty()) findAt = (findAt + 1) % found.size },
+                    onNewer = { if (found.isNotEmpty()) findAt = (findAt - 1 + found.size) % found.size },
+                    onClose = { finding = false; findQuery = "" },
+                )
+            } else {
             // The screen draws under the status bar, so the top bar steps down below it.
             Row(Modifier.statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { ScreenHeader(chat.title, onBack) }
@@ -174,11 +243,15 @@ fun ChatScreen(
                         modifier = Modifier.padding(horizontal = 8.dp),
                     )
                 }
+                androidx.compose.material3.IconButton(onClick = { finding = true }, modifier = Modifier.size(56.dp)) {
+                    Icon(Icons.Filled.Search, contentDescription = "Find in this chat")
+                }
                 if (onDetails != null) {
                     androidx.compose.material3.IconButton(onClick = onDetails, modifier = Modifier.size(56.dp)) {
                         Icon(Icons.Filled.Info, contentDescription = if (chat.isGroup) "Group details" else "Chat details")
                     }
                 }
+            }
             }
         },
         bottomBar = {
@@ -236,6 +309,19 @@ fun ChatScreen(
         // Worked out again only when the messages or the day change, not on every keystroke.
         val today = clock / 3_600_000 // the hour is enough to notice midnight
         val places = androidx.compose.runtime.remember(messages, today) { io.github.secnewt.messages.chats.Timeline.place(messages, clock) }
+        // The list's items in order (newest first, day lines after their message), to find where a match is.
+        val order = androidx.compose.runtime.remember(messages, places) {
+            buildList<Any> {
+                for (i in messages.indices.reversed()) {
+                    add(messages[i].id)
+                    if (places[i].day != null) add("day-${messages[i].id}")
+                }
+            }
+        }
+        val current = found.getOrNull(findAt)
+        androidx.compose.runtime.LaunchedEffect(current) {
+            current?.let { id -> order.indexOf(id).takeIf { it >= 0 }?.let { list.animateScrollToItem(it) } }
+        }
         Box(Modifier.fillMaxSize().padding(padding)) {
         LazyColumn(
             state = list,
@@ -256,6 +342,8 @@ fun ChatScreen(
                     onShowReactions = { reactionsOf = message },
                     onNumber = { number = it },
                     onPlayVideo = { video = it },
+                    highlight = findQuery.trim().takeIf { finding && it.isNotEmpty() },
+                    onCopyCode = onCopyCode,
                     showStatus = message.id == newestMine || message.status == SendStatus.SENDING || message.status.failed,
                     onRetry = onRetry?.let { retry -> { retry(message) } },
                 )
@@ -326,6 +414,9 @@ private fun Bubble(
     onShowReactions: () -> Unit = {},
     onNumber: (String) -> Unit = {},
     onPlayVideo: (io.github.secnewt.messages.chats.Attachment) -> Unit = {},
+    /** Words being looked for (Find in this chat), shown loudly where they match. */
+    highlight: String? = null,
+    onCopyCode: ((String) -> Unit)? = null,
     showStatus: Boolean = false,
     onRetry: (() -> Unit)? = null,
 ) {
@@ -353,7 +444,10 @@ private fun Bubble(
         modifier = Modifier.fillMaxWidth().padding(top = if (first) 12.dp else 3.dp)
             .then(if (onOptions != null) Modifier.pointerInput(onOptions) { detectTapGestures(onLongPress = { onOptions() }) } else Modifier)
             .then(
-            if (canRetry || message.waiting || message.images.isNotEmpty() || message.files.isNotEmpty() || Links.find(message.body).isNotEmpty()) {
+            // Anything with its own button keeps its parts for screen readers (a sign-in code's Copy, too).
+            if (canRetry || message.waiting || message.images.isNotEmpty() || message.files.isNotEmpty() || Links.find(message.body).isNotEmpty() ||
+                (onCopyCode != null && !message.mine && io.github.secnewt.messages.chats.Codes.find(message.body) != null)
+            ) {
                 Modifier.semantics(mergeDescendants = false) { if (options != null) customActions = options }
             } else {
                 Modifier.clearAndSetSemantics {
@@ -433,10 +527,20 @@ private fun Bubble(
                 }
                 if (message.body.isNotEmpty()) {
                     Text(
-                        linked(message.body, onNumber, linkColor = if (message.mine) ink else MaterialTheme.colorScheme.primary),
+                        marked(linked(message.body, onNumber, linkColor = if (message.mine) ink else MaterialTheme.colorScheme.primary), highlight),
                         style = MaterialTheme.typography.bodyLarge.copy(fontSize = 19.sp, lineHeight = 25.sp),
                         color = ink,
                     )
+                }
+                // A sign-in code someone sent: a button to copy it, right here.
+                val code = if (!message.mine && onCopyCode != null) io.github.secnewt.messages.chats.Codes.find(message.body) else null
+                if (code != null && onCopyCode != null) {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = { onCopyCode(code) },
+                        modifier = Modifier.heightIn(min = 56.dp).semantics { contentDescription = "Copy code ${code.toList().joinToString(" ")}" },
+                    ) {
+                        Text("Copy $code", style = MaterialTheme.typography.titleMedium, fontFamily = io.github.secnewt.ui.NewtFonts.Mono, color = ink)
+                    }
                 }
                 if (message.waiting) {
                     androidx.compose.material3.OutlinedButton(onClick = onDownload, modifier = Modifier.heightIn(min = 48.dp)) {
@@ -713,7 +817,6 @@ private fun MessageActionsSheet(
     onDismiss: () -> Unit,
 ) {
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
-    var confirmDelete by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (onReact != null && io.github.secnewt.messages.reactions.Reactions.canReact(message)) {
@@ -743,20 +846,9 @@ private fun MessageActionsSheet(
                 }
             }
             if (onDelete != null) {
-                if (!confirmDelete) {
-                    androidx.compose.material3.TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                        Text("Delete this message", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
-                    }
-                } else {
-                    Text("Delete it from this phone? This can't be undone.", style = MaterialTheme.typography.bodyLarge)
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        androidx.compose.material3.Button(onClick = onDelete, modifier = Modifier.heightIn(min = 56.dp)) {
-                            Text("Delete", style = MaterialTheme.typography.titleMedium)
-                        }
-                        androidx.compose.material3.OutlinedButton(onClick = { confirmDelete = false }, modifier = Modifier.heightIn(min = 56.dp)) {
-                            Text("Keep it", style = MaterialTheme.typography.titleMedium)
-                        }
-                    }
+                // No "are you sure?": it can be undone for a few seconds afterwards.
+                androidx.compose.material3.TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+                    Text("Delete this message", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
                 }
             }
         }
@@ -979,4 +1071,64 @@ enum class AttachKind(val label: String) {
     CAMERA("Take a photo"),
     FILE("File"),
     CONTACT("Contact card"),
+}
+
+/** Find in this chat: what to look for, how many matched, and Older / Newer to step through them. */
+@Composable
+private fun FindBar(query: String, onQuery: (String) -> Unit, count: Int, at: Int, onOlder: () -> Unit, onNewer: () -> Unit, onClose: () -> Unit) {
+    Column(Modifier.statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val focus = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
+            androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQuery,
+                label = { Text("Find in this chat") },
+                singleLine = true,
+                colors = neonFieldColors(),
+                textStyle = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f).focusRequester(focus),
+            )
+            androidx.compose.material3.TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 56.dp)) {
+                Text("Done", style = MaterialTheme.typography.titleMedium)
+            }
+        }
+        if (query.isNotBlank()) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    if (count == 0) "Nothing found" else "${at + 1} of $count",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
+                )
+                if (count > 1) {
+                    androidx.compose.material3.OutlinedButton(onClick = onOlder, modifier = Modifier.heightIn(min = 56.dp)) {
+                        Text("Older", style = MaterialTheme.typography.titleMedium)
+                    }
+                    androidx.compose.material3.OutlinedButton(onClick = onNewer, modifier = Modifier.heightIn(min = 56.dp)) {
+                        Text("Newer", style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** [text] with every match of [query] shown loudly: solid accent behind, dark words on it. */
+@Composable
+private fun marked(text: androidx.compose.ui.text.AnnotatedString, query: String?): androidx.compose.ui.text.AnnotatedString {
+    if (query.isNullOrEmpty()) return text
+    val loud = androidx.compose.ui.text.SpanStyle(
+        color = MaterialTheme.colorScheme.onPrimary,
+        background = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.Bold,
+    )
+    val builder = androidx.compose.ui.text.AnnotatedString.Builder(text)
+    var from = 0
+    while (true) {
+        val at = text.text.indexOf(query, from, ignoreCase = true)
+        if (at < 0) break
+        builder.addStyle(loud, at, at + query.length)
+        from = at + query.length
+    }
+    return builder.toAnnotatedString()
 }
