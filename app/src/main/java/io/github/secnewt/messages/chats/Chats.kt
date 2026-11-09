@@ -120,6 +120,8 @@ data class Chat(
     val draft: String? = null,
     /** The newest message here is mine and didn't go (shown as "Not sent" in the list). */
     val failed: Boolean = false,
+    /** Put away: out of the tabs, under Archived, until someone writes again. */
+    val archived: Boolean = false,
 ) {
     val isGroup: Boolean get() = people.size > 1
     val title: String get() = name ?: people.joinToString(", ") { it.shownName }
@@ -156,9 +158,9 @@ object ChatSorting {
         return digits.length in 3..8 && trimmed.none { it == '+' }
     }
 
-    /** One tab's chats: pinned first, then unread ones, then newest first. */
+    /** One tab's chats (not archived ones): pinned first, then unread ones, then newest first. */
     fun inTab(chats: List<Chat>, tab: ChatTab): List<Chat> =
-        chats.filter { tabFor(it) == tab }.sortedWith(
+        chats.filter { !it.archived && tabFor(it) == tab }.sortedWith(
             compareByDescending<Chat> { it.pinned }.thenByDescending { it.unread > 0 }.thenByDescending { it.lastTimeMillis },
         )
 

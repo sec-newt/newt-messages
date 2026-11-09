@@ -124,6 +124,11 @@ fun ChatListScreen(
     }
 
     val searching = query.isNotBlank()
+    // Archived chats, shown on their own page from the "Archived" button under each tab.
+    var viewingArchive by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    val archived = chats.filter { it.archived }.sortedByDescending { it.lastTimeMillis }
+    if (viewingArchive && archived.isEmpty()) viewingArchive = false
+    if (viewingArchive && !selecting) androidx.activity.compose.BackHandler { viewingArchive = false }
     // Swipe left and right between People, Groups, and Codes & alerts; the tabs follow.
     val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = tab.ordinal) { ChatTab.entries.size }
     androidx.compose.runtime.LaunchedEffect(tab) { if (pager.currentPage != tab.ordinal) pager.animateScrollToPage(tab.ordinal) }
@@ -149,9 +154,13 @@ fun ChatListScreen(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
-                if (!selecting) TabHeader(if (searching) "Search" else tab.label, onOpenSettings)
+                if (!selecting && viewingArchive) {
+                    io.github.secnewt.ui.ScreenHeader("Archived", onBack = { viewingArchive = false })
+                } else if (!selecting) {
+                    TabHeader(if (searching) "Search" else tab.label, onOpenSettings)
+                }
                 if (sharing != null && !selecting) ShareBanner(sharing, onCancelShare)
-                if (onQuery != null && !selecting) {
+                if (onQuery != null && !selecting && !viewingArchive) {
                     androidx.compose.material3.OutlinedTextField(
                         value = query,
                         onValueChange = onQuery,
@@ -166,7 +175,29 @@ fun ChatListScreen(
                     )
                 }
             }
-            if (searching) {
+            if (viewingArchive) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
+                ) {
+                    item {
+                        Text(
+                            "Archived chats come back on their own when someone writes. Hold one to unarchive it.",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 8.dp),
+                        )
+                    }
+                    items(archived, key = { it.threadId }) { chat ->
+                        ChatRow(
+                            chat, time(chat.lastTimeMillis),
+                            picked = if (onBulk != null) chat.threadId in picked else null,
+                            onLongPress = if (onBulk != null) ({ toggle(chat) }) else null,
+                        ) { if (selecting) toggle(chat) else onOpen(chat) }
+                        HorizontalDivider()
+                    }
+                }
+            } else if (searching) {
                 SearchResults(chats, query, hits, time, onOpen)
             } else {
                 androidx.compose.foundation.pager.HorizontalPager(state = pager, modifier = Modifier.weight(1f)) { page ->
@@ -195,6 +226,17 @@ fun ChatListScreen(
                             ) { if (selecting) toggle(chat) else onOpen(chat) }
                             HorizontalDivider()
                         }
+                        // Under the list: the way to archived chats, with how many there are.
+                        if (archived.isNotEmpty() && !selecting) {
+                            item(key = "archived") {
+                                io.github.secnewt.ui.NewtButton(
+                                    "Archived (${archived.size})",
+                                    onClick = { viewingArchive = true },
+                                    icon = NewtIcons.Archive,
+                                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -205,7 +247,8 @@ fun ChatListScreen(
 /** What can be done to several picked chats at once. */
 enum class BulkAction(val label: String, val confirm: Boolean) {
     PIN("Pin", false), UNPIN("Unpin", false), MUTE("Mute", false), UNMUTE("Unmute", false),
-    MARK_READ("Mark read", false), BLOCK("Block", true), DELETE("Delete", true),
+    MARK_READ("Mark read", false), ARCHIVE("Archive", false), UNARCHIVE("Unarchive", false),
+    BLOCK("Block", true), DELETE("Delete", true),
 }
 
 @Composable
@@ -229,6 +272,10 @@ internal fun SelectionBar(picked: List<Chat>, onAction: (BulkAction) -> Unit, on
                 BarIcon(NewtIcons.Pin, if (allPinned) "Unpin" else "Pin", on = allPinned) { onAction(if (allPinned) BulkAction.UNPIN else BulkAction.PIN) }
                 BarIcon(NewtIcons.Muted, if (allMuted) "Unmute" else "Mute", on = allMuted) { onAction(if (allMuted) BulkAction.UNMUTE else BulkAction.MUTE) }
                 BarIcon(NewtIcons.MarkRead, "Mark read") { onAction(BulkAction.MARK_READ) }
+                val allArchived = picked.all { it.archived }
+                BarIcon(NewtIcons.Archive, if (allArchived) "Unarchive" else "Archive", on = allArchived) {
+                    onAction(if (allArchived) BulkAction.UNARCHIVE else BulkAction.ARCHIVE)
+                }
                 BarIcon(NewtIcons.Block, "Block", danger = true) { onAction(BulkAction.BLOCK) }
                 BarIcon(NewtIcons.Delete, "Delete", danger = true) { onAction(BulkAction.DELETE) }
             }

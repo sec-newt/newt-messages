@@ -28,4 +28,18 @@ class SettingsTest {
         assertEquals("Message from 2 6 2 9 6 6: a sign-in code", Speaking.text(null, "262966", null, "482913 is your verification code"))
         assertEquals("Message from Becca", Speaking.text("Becca", "+19725550111", null, null))
     }
+
+    @Test
+    fun `an archived chat comes back when someone writes`() {
+        assertEquals(false, Archive.isArchived(null, 100))
+        assertEquals(true, Archive.isArchived(archivedAt = 200, lastTimeMillis = 100))
+        assertEquals(true, Archive.isArchived(archivedAt = 200, lastTimeMillis = 200))
+        assertEquals(false, Archive.isArchived(archivedAt = 200, lastTimeMillis = 300))
+    }
+
+    @Test
+    fun `archived chats aren't in the tabs`() {
+        val mom = io.github.secnewt.messages.chats.Chat(2, listOf(io.github.secnewt.messages.chats.Person("+19725550144", "Mom")), "", 1, archived = true)
+        assertEquals(emptyList<Any>(), io.github.secnewt.messages.chats.ChatSorting.inTab(listOf(mom), io.github.secnewt.messages.chats.ChatTab.PEOPLE))
+    }
 }

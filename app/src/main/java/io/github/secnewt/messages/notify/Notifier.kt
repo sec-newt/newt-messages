@@ -96,6 +96,10 @@ class Notifier(private val context: Context) {
         chat?.let { Conversations.publish(context, it) }?.let { id ->
             builder.setShortcutId(id).setLocusId(androidx.core.content.LocusIdCompat(id))
         }
+        lockScreen(
+            builder, CHANNEL_MESSAGES, chat?.title ?: people.joinToString(", ") { it.shownName },
+            if (unread.size == 1) "New message" else "${unread.size} new messages",
+        )
         // Replying works for groups too: the reply goes to everyone, as a group message.
         if (people.isNotEmpty()) builder.addAction(reply(threadId))
         Codes.find(unread.last().body)?.let { builder.addAction(copy(it)) }
@@ -104,8 +108,14 @@ class Notifier(private val context: Context) {
             val last = unread.last()
             last.from?.let { from ->
                 val group = if (people.size > 1) store.chats().firstOrNull { it.threadId == threadId }?.name ?: "a group" else null
-                val body = if (settings.settings().readMessage) last.body.ifBlank { if (last.images.isNotEmpty()) "a picture" else "" } else null
-                Speaker.announce(context, Speaking.text(from.name, from.address, group, body))
+                // While locked, say no more than the lock screen shows: who, or nothing at all.
+                val locked = context.getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true
+                val lock = settings.settings().lockScreen
+                val readIt = settings.settings().readMessage && !(locked && lock != io.github.secnewt.messages.settings.LockScreen.SHOW)
+                val body = if (readIt) last.body.ifBlank { if (last.images.isNotEmpty()) "a picture" else "" } else null
+                if (!(locked && lock == io.github.secnewt.messages.settings.LockScreen.HIDE_ALL)) {
+                    Speaker.announce(context, Speaking.text(from.name, from.address, group, body))
+                }
             }
         }
     }
@@ -128,9 +138,27 @@ class Notifier(private val context: Context) {
             .setContentIntent(open(threadId))
             .setAutoCancel(true)
             .setSilent(how != ReactionNotify.LIKE_A_TEXT)
+            .let { lockScreen(it, channel, from.shownName, "New reaction") }
             .build()
         post(REACTION_ID_OFFSET + threadId.toInt(), notification)
     }
+
+    /**
+     * What shows while the phone is locked (Settings): everything (as far as Android's own lock
+     * screen setting allows), who it's from with [hidden] in place of the words, or nothing.
+     */
+    private fun lockScreen(builder: NotificationCompat.Builder, channel: String, who: String, hidden: String): NotificationCompat.Builder =
+        when (settings.settings().lockScreen) {
+            io.github.secnewt.messages.settings.LockScreen.SHOW -> builder.setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            io.github.secnewt.messages.settings.LockScreen.HIDE_WORDS -> builder.setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setPublicVersion(
+                NotificationCompat.Builder(context, channel)
+                    .setSmallIcon(R.drawable.ic_launcher_monochrome)
+                    .setContentTitle(who)
+                    .setContentText(hidden)
+                    .build(),
+            )
+            io.github.secnewt.messages.settings.LockScreen.HIDE_ALL -> builder.setVisibility(NotificationCompat.VISIBILITY_SECRET)
+        }
 
     /** A picture message couldn't download; the chat has a Download button to try again. */
     fun mmsFailed(threadId: Long) {

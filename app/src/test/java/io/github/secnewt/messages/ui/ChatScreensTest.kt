@@ -401,8 +401,15 @@ class ChatScreensTest {
         assertEquals(4L to "🙏", reacted)
     }
 
+    private fun openOptions(spoken: String) {
+        composeRule.onNodeWithContentDescription(spoken, substring = true)
+            .fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.CustomActions]
+            .first { it.label == "Message options" }.action()
+        composeRule.waitForIdle()
+    }
+
     @Test
-    fun deletingOneMessageAsksFirst() {
+    fun aDeletedMessageCanBeBroughtBack() {
         var deleted: Long? = null
         composeRule.setContent {
             io.github.secnewt.ui.NewtTheme(darkTheme = true) {
@@ -412,14 +419,79 @@ class ChatScreensTest {
                 )
             }
         }
-        composeRule.onNodeWithContentDescription("Becca: Thank you both!", substring = true)
-            .fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.CustomActions]
-            .first { it.label == "Message options" }.action()
-        composeRule.waitForIdle()
+        openOptions("Becca: Thank you both!")
         composeRule.onNodeWithText("Delete this message").performClick()
+        // Gone from the screen, not yet from the phone, with Undo.
+        composeRule.onAllNodesWithContentDescription("Becca: Thank you both!", substring = true).assertCountEquals(0)
         assertEquals(null, deleted)
-        composeRule.onNodeWithText("Delete").performClick()
+        composeRule.onNodeWithText("Undo").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Becca: Thank you both!", substring = true).assertExists()
+        assertEquals(null, deleted)
+    }
+
+    @Test
+    fun aDeletedMessageIsReallyDeletedWhenTheChatCloses() {
+        var deleted: Long? = null
+        var open by androidx.compose.runtime.mutableStateOf(true)
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                if (open) {
+                    ChatScreen(
+                        SampleChats.family, SampleChats.familyMessages, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
+                        time = SampleChats.time, onReact = { _, _ -> }, onDeleteMessage = { deleted = it.id },
+                    )
+                }
+            }
+        }
+        openOptions("Becca: Thank you both!")
+        composeRule.onNodeWithText("Delete this message").performClick()
+        open = false
+        composeRule.waitForIdle()
         assertEquals(4L, deleted)
+    }
+
+    @Test
+    fun aSignInCodeCanBeCopiedFromTheChat() {
+        var copied: String? = null
+        val code = listOf(io.github.secnewt.messages.chats.Message(1, "482913 is your verification code", SampleChats.HOUR, io.github.secnewt.messages.chats.Person("262966")))
+        composeRule.setContent {
+            NewtTheme(darkTheme = true) {
+                ChatScreen(SampleChats.chats[5], code, draft = "", onDraftChange = {}, onSend = {}, onBack = {}, time = SampleChats.time, onCopyCode = { copied = it })
+            }
+        }
+        composeRule.onNodeWithText("Copy 482913").performClick()
+        assertEquals("482913", copied)
+    }
+
+    @Test
+    fun findInThisChatStepsThroughMatches() {
+        composeRule.setContent { NewtTheme(darkTheme = true) { family() } }
+        composeRule.onNodeWithContentDescription("Find in this chat").performClick()
+        composeRule.onNode(androidx.compose.ui.test.hasSetTextAction() and androidx.compose.ui.test.hasText("Find in this chat")).performTextInput("chairs")
+        composeRule.onNodeWithText("1 of 2").assertIsDisplayed()
+        composeRule.onNodeWithText("Older").performClick()
+        composeRule.onNodeWithText("2 of 2").assertIsDisplayed()
+        composeRule.onNodeWithText("Done").performClick()
+        composeRule.onNodeWithContentDescription("Find in this chat").assertIsDisplayed()
+    }
+
+    private val withArchive = SampleChats.chats.mapIndexed { i, c -> if (i == 1) c.copy(archived = true) else c }
+
+    @Test
+    fun archivedChatsLeaveTheTabAndHaveTheirOwnPage() {
+        composeRule.setContent {
+            NewtTheme(darkTheme = true) {
+                ChatListScreen(withArchive, ChatTab.PEOPLE, onTab = {}, onOpen = {}, time = SampleChats.time, onBulk = { _, _ -> })
+            }
+        }
+        composeRule.onAllNodesWithContentDescription("Mom", substring = true).assertCountEquals(0)
+        composeRule.onNodeWithText("Archived (1)").performClick()
+        composeRule.onNodeWithContentDescription("Mom", substring = true).assertIsDisplayed()
+    }
+
+    @Test fun archivedPageDark() = composeRule.newtScreenshot("chats-archived-dark", dark = true) {
+        ChatListScreen(withArchive, ChatTab.PEOPLE, onTab = {}, onOpen = {}, time = SampleChats.time, onBulk = { _, _ -> })
     }
 
     @Test fun settingsDark() = composeRule.newtScreenshot("settings-dark", dark = true) {
