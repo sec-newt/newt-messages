@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The only files shared out: one cache folder for the phone's MMS service, and one where the
-     camera app writes a photo you're about to send. Nothing else in the app is reachable. -->
+<!-- The only files shared out: one cache folder for the phone's MMS service, one where the
+     camera app writes a photo you're about to send, and small copies of received pictures for
+     the notification shade to show. Nothing else in the app is reachable. -->
 <paths>
     <cache-path name="mms" path="mms/" />
     <cache-path name="camera" path="camera/" />
+    <cache-path name="notify" path="notify/" />
 </paths>

@@ -37,25 +37,66 @@ object Outgoing {
             .getInt(SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE, 300 * 1024)
         // Leave room for the words and the message's own headers.
         val room = limit * 9 / 10 - text.toByteArray().size - 2048
-        val pictures = attachments.count { it.type.startsWith("image/") }
-        val others = attachments.filterNot { it.type.startsWith("image/") }.map { file ->
-            val bytes = runCatching { context.contentResolver.openInputStream(Uri.parse(file.uri))?.use { it.readBytes() } }.getOrNull()
-                ?: return "Couldn't read ${file.name}."
+        fun isPicture(a: Attachment) = a.type.startsWith("image/")
+        fun isVideo(a: Attachment) = a.type.startsWith("video/")
+        val pictures = attachments.count(::isPicture)
+        val videos = attachments.filter(::isVideo)
+        // Files that are sent as they are: documents, contact cards, sound.
+        val others = attachments.filterNot { isPicture(it) || isVideo(it) }.map { file ->
+            val bytes = readUpTo(context, file.uri, Int.MAX_VALUE.toLong()) ?: return "Couldn't read ${file.name}."
             Mms.Part(bytes, file.type, file.name)
         }
-        val left = room - others.sumOf { it.bytes.size }
-        if (left < 0 || (pictures > 0 && left < 20_000 * pictures)) {
+        var left = room - others.sumOf { it.bytes.size }
+        // Each picture needs at least a little room.
+        val forVideos = left - 20_000L * pictures
+        if (left < 0 || forVideos < 0) {
             return "Too big for a picture message: your carrier allows about ${limit / 1024} KB in all."
         }
+        // Videos share what's left (leaving the pictures their bit). One that already fits goes as
+        // it is; one too big is made smaller, and if that fails, the message says why.
+        val shrunkVideos = videos.map { video ->
+            val share = (if (pictures > 0) forVideos * 7 / 10 else forVideos) / videos.size
+            val asIs = readUpTo(context, video.uri, share)
+            if (asIs != null) {
+                Mms.Part(asIs, video.type, video.name)
+            } else {
+                when (val made = io.github.secnewt.messages.ui.Videos.shrink(context.applicationContext, Uri.parse(video.uri), share)) {
+                    is io.github.secnewt.messages.ui.Videos.Result.Made -> Mms.Part(made.bytes, "video/mp4", video.name.substringBeforeLast('.') + ".mp4")
+                    io.github.secnewt.messages.ui.Videos.Result.TooLong -> return "${video.name} is too long for a picture message. " +
+                        "About ${io.github.secnewt.messages.chats.VideoPlan.longestSeconds(share)} seconds fits."
+                    io.github.secnewt.messages.ui.Videos.Result.Failed -> return "Couldn't make ${video.name} small enough to send. " +
+                        "Try a shorter video."
+                }
+            }
+        }
+        left -= shrunkVideos.sumOf { it.bytes.size }
         // Pictures are shrunk to share what's left.
-        val shrunk = attachments.filter { it.type.startsWith("image/") }.map { picture ->
-            val bytes = Pictures.forSending(context, Uri.parse(picture.uri), maxBytes = left / pictures)
+        val shrunk = attachments.filter(::isPicture).map { picture ->
+            val bytes = Pictures.forSending(context, Uri.parse(picture.uri), maxBytes = (left / pictures).toInt())
                 ?: return "${picture.name} couldn't be made small enough to send."
             Mms.Part(bytes, "image/jpeg", picture.name.substringBeforeLast('.') + ".jpg")
-        }
+        } + shrunkVideos
         Mms.send(context, to, text, shrunk + others)
         return null
     }
+
+    /**
+     * A file's bytes if there are at most [limit] of them; null if there are more, or it can't
+     * be read. Stops reading past the limit, so a long video isn't loaded whole just to find out.
+     */
+    private fun readUpTo(context: Context, uri: String, limit: Long): ByteArray? = runCatching {
+        context.contentResolver.openInputStream(Uri.parse(uri))?.use { input ->
+            val out = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(buffer)
+                if (n < 0) break
+                out.write(buffer, 0, n)
+                if (out.size() > limit) return@use null
+            }
+            out.toByteArray()
+        }
+    }.getOrNull()
 
     /** Tries a message that failed again. Null when it's on its way, otherwise why not. */
     fun retry(context: Context, message: Message): String? = try {

@@ -69,6 +69,7 @@ class MainActivity : ComponentActivity() {
         picked = null
     }
     private var startDraft by mutableStateOf("")
+    private val sending = java.util.concurrent.Executors.newSingleThreadExecutor()
     // Pictures, videos or words shared from another app, waiting for me to pick a chat.
     private var shared by mutableStateOf<List<io.github.secnewt.messages.chats.Attachment>>(emptyList())
     private var sharedText by mutableStateOf("")
@@ -395,7 +396,8 @@ class MainActivity : ComponentActivity() {
                     drafts.clear(thread)
                     startDraft = ""
                     attachments = emptyList()
-                    Thread { send(chat, text, attached) }.start()
+                    // One at a time, in order: a text sent while a video is being made smaller waits for it.
+                    sending.execute { send(chat, text, attached) }
                 }
             },
             onBack = { openThread = null },
@@ -463,6 +465,8 @@ class MainActivity : ComponentActivity() {
      * the words and attachments go back in that chat's message box.
      */
     private fun send(chat: Chat, text: String, attachments: List<io.github.secnewt.messages.chats.Attachment> = emptyList()) {
+        // Making a video small enough can take a little while; say so rather than seem stuck.
+        if (attachments.any { it.type.startsWith("video/") }) complain("Getting the video ready to send…")
         val problem = Outgoing.send(this, chat.people.map { it.address }, text, attachments) ?: return
         complain(problem)
         runOnUiThread {
