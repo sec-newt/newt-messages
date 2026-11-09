@@ -21,6 +21,23 @@ object Pictures {
     }
 
     /**
+     * A small preview of a picture or a video's first frame, or null if there isn't one. A
+     * video's frame comes from Android's own media reader, for any video the app can open.
+     */
+    fun preview(context: Context, uri: String, type: String, maxPx: Int = 384): ImageBitmap? = try {
+        if (type.startsWith("video/")) {
+            android.media.MediaMetadataRetriever().use { reader ->
+                reader.setDataSource(context, Uri.parse(uri))
+                reader.getScaledFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC, maxPx, maxPx)?.asImageBitmap()
+            }
+        } else {
+            thumbnail(context, uri, maxPx)
+        }
+    } catch (e: Exception) {
+        null
+    }
+
+    /**
      * A picture made small enough for a picture message: at most [maxPx] on its long side, as a
      * JPEG under [maxBytes]. Null if it can't be read or made small enough.
      */

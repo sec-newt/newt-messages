@@ -64,11 +64,11 @@ object ChatColors {
         // Everyone whose own color is free keeps it first, so a clash only moves the later one.
         val bumped = mutableListOf<Person>()
         for (person in rest) {
-            val own = PersonHue.fromName(person.shownName)
+            val own = PersonHue.fromName(person.colorName)
             if (own in taken) bumped += person else { result[key(person.address)] = own; taken += own }
         }
         for (person in bumped) {
-            val own = PersonHue.fromName(person.shownName)
+            val own = PersonHue.fromName(person.colorName)
             val free = PersonHue.entries.firstOrNull { it !in taken }
             val hue = free ?: own
             result[key(person.address)] = hue

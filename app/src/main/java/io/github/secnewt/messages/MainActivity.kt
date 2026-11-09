@@ -420,8 +420,8 @@ class MainActivity : ComponentActivity() {
                     io.github.secnewt.messages.ui.AttachKind.CONTACT -> pickContactCard.launch(null)
                 }
             },
-            attached = attachments.takeIf { it.isNotEmpty() }?.joinToString(", ") { it.name },
-            onRemoveAttachment = { attachments = emptyList() },
+            attached = attachments,
+            onRemoveAttachment = { gone -> attachments = attachments - gone },
             onSave = { uri, name, type -> Thread { save(uri, name, type) }.start() },
             onDetails = { showDetails = true },
             onReact = { message, emoji ->

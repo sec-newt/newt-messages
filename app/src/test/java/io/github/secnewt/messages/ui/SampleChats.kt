@@ -8,6 +8,8 @@ import io.github.secnewt.messages.chats.Reaction
 /** Made-up chats for screenshots. */
 object SampleChats {
     const val HOUR = 3_600_000L
+    /** "Now" for the sample chats, so the day line reads "Today". */
+    const val NOW = 12 * HOUR
     val becca = Person("+19725550111", "Becca")
     val sam = Person("+12145550122", "Sam")
     val pastor = Person("+14695550133", "Pastor Dave")
@@ -28,6 +30,7 @@ object SampleChats {
         Message(1, "Who's bringing what Saturday?", 8 * HOUR, mom),
         Message(2, "I can do the brisket", 9 * HOUR, reactions = listOf(Reaction("❤️", mom), Reaction("❤️", becca), Reaction("😂", sam))),
         Message(3, "I'll bring the chairs", 10 * HOUR, sam, reactions = listOf(Reaction("👍", null))),
+        Message(8, "And the folding table", 10 * HOUR + 60_000, sam),
         Message(4, "Thank you both!", 11 * HOUR, becca),
         Message(-5, "The new chairs", 11 * HOUR + 60_000, sam, images = listOf("content://mms/part/1")),
         Message(
