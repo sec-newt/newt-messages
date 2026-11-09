@@ -414,8 +414,8 @@ private fun Bubble(
                 message.files.forEach { file ->
                     // Videos show their first frame and play full screen; sound plays right here.
                     when {
-                        file.type.startsWith("video/") -> VideoTile(file, ink, onPlay = { onPlayVideo(file) }, onLongPress = onOptions)
-                        file.type.startsWith("audio/") -> AudioRow(file, ink)
+                        file.type.startsWith("video/") -> VideoTile(file, ink, sent = time, onPlay = { onPlayVideo(file) }, onLongPress = onOptions)
+                        file.type.startsWith("audio/") -> AudioRow(file, ink, sent = time)
                     }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         val media = file.type.startsWith("video/") || file.type.startsWith("audio/")
@@ -424,7 +424,7 @@ private fun Bubble(
                             androidx.compose.material3.OutlinedButton(
                                 onClick = { onSave(file.uri, file.name, file.type) },
                                 // Named, so two files' Save buttons don't sound the same.
-                                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Save ${file.name}" },
+                                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Save ${file.name}, $time" },
                             ) {
                                 Text("Save", style = MaterialTheme.typography.titleMedium, color = ink)
                             }
@@ -544,15 +544,15 @@ private fun linked(
 @Composable
 private fun MmsImage(uri: String, onLongPress: (() -> Unit)? = null, onOpen: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val image by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, uri) {
-        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Pictures.thumbnail(context, uri) }
+    // A GIF moves (unless Android's animations are off); anything else is a still picture.
+    // One decode either way: the moving one is tried first, and only GIFs and WebPs are.
+    val shown by androidx.compose.runtime.produceState<Any?>(null, uri) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            Pictures.animated(context, uri) ?: Pictures.thumbnail(context, uri)
+        }
     }
-    // A GIF moves (unless Android's animations are off).
-    val moving by androidx.compose.runtime.produceState<android.graphics.drawable.AnimatedImageDrawable?>(null, uri) {
-        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Pictures.animated(context, uri) }
-    }
-    val loaded = image
-    val gif = moving
+    val loaded = shown as? androidx.compose.ui.graphics.ImageBitmap
+    val gif = shown as? android.graphics.drawable.AnimatedImageDrawable
     if (gif != null) {
         AnimatedPicture(gif, onOpen = onOpen, onLongPress = onLongPress)
     } else if (loaded != null) {

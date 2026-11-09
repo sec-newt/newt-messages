@@ -902,6 +902,6 @@ class ChatScreensTest {
     fun videosAndVoiceMessagesHaveWordedButtons() {
         composeRule.setContent { NewtTheme(darkTheme = true) { mediaChat() } }
         composeRule.onNodeWithContentDescription("Play video", substring = true).assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Play Audio Message.m4a").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Play Audio Message.m4a, 11:00 AM").assertIsDisplayed()
     }
 }

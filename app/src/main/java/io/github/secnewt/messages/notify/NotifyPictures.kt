@@ -22,8 +22,10 @@ object NotifyPictures {
         val dir = File(context.cacheDir, "notify").apply { mkdirs() }
         val now = System.currentTimeMillis()
         dir.listFiles()?.filter { now - it.lastModified() > KEEP_MILLIS }?.forEach { it.delete() }
-        // One copy per picture, named from its address so it isn't made twice.
-        val file = File(dir, "p" + Integer.toHexString(picture.hashCode()) + ".jpg")
+        // One copy per picture, named from a SHA-256 of its address: never two pictures in one file.
+        val name = java.security.MessageDigest.getInstance("SHA-256").digest(picture.toByteArray())
+            .joinToString("") { "%02x".format(it) }.take(32)
+        val file = File(dir, "p$name.jpg")
         if (!file.exists()) {
             val bytes = Pictures.forSending(context, Uri.parse(picture), maxBytes = 400_000, maxPx = 1024) ?: return null
             file.writeBytes(bytes)

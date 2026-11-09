@@ -27,6 +27,15 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** Making a video small enough for a picture message, on the phone (nothing leaves it). */
 object Videos {
 
+    /** What making a video smaller came to. */
+    sealed interface Result {
+        class Made(val bytes: ByteArray) : Result
+        /** Too long to fit at any watchable quality. */
+        data object TooLong : Result
+        /** It couldn't be read or the phone's encoder couldn't make it. */
+        data object Failed : Result
+    }
+
     /** How long a video is, or null if it can't be read. */
     fun durationMillis(context: Context, uri: Uri): Long? = try {
         MediaMetadataRetriever().use { reader ->
@@ -38,14 +47,14 @@ object Videos {
     }
 
     /**
-     * The video re-made as a small MP4 under [maxBytes], or null if it's too long to fit or
-     * couldn't be made. Run it off the main thread: it waits for Android's video encoder.
+     * The video re-made as a small MP4 under [maxBytes]; or why not. Pass the application
+     * context: this can run for minutes. Run it off the main thread: it waits for Android's video encoder.
      * Setting the quality is marked "unstable" in Media3 (it may change between versions).
      */
     @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
-    fun shrink(context: Context, uri: Uri, maxBytes: Long): ByteArray? {
-        val duration = durationMillis(context, uri) ?: return null
-        val plan = VideoPlan.plan(duration, maxBytes) ?: return null
+    fun shrink(context: Context, uri: Uri, maxBytes: Long): Result {
+        val duration = durationMillis(context, uri) ?: return Result.Failed
+        val plan = VideoPlan.plan(duration, maxBytes) ?: return Result.TooLong
         val out = File(File(context.cacheDir, "video").apply { mkdirs() }, "send-${System.nanoTime()}.mp4")
         val done = CountDownLatch(1)
         val ok = AtomicBoolean(false)
@@ -85,7 +94,12 @@ object Videos {
         }
         if (!done.await(5, TimeUnit.MINUTES)) main.post { transformer?.cancel() }
         return try {
-            if (ok.get() && out.length() in 1..maxBytes) out.readBytes() else null
+            when {
+                ok.get() && out.length() in 1..maxBytes -> Result.Made(out.readBytes())
+                // Made, but the encoder overshot the limit.
+                ok.get() -> Result.TooLong
+                else -> Result.Failed
+            }
         } finally {
             out.delete()
         }

@@ -1,6 +1,5 @@
 package io.github.secnewt.messages.ui
 
-import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.net.Uri
 import android.widget.VideoView
@@ -45,6 +44,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -65,14 +66,7 @@ internal fun clockOf(millis: Long): String {
 }
 
 /** How long a video or sound is, or null. */
-private fun durationOf(context: android.content.Context, uri: String): Long? = try {
-    MediaMetadataRetriever().use { reader ->
-        reader.setDataSource(context, Uri.parse(uri))
-        reader.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
-    }
-} catch (e: Exception) {
-    null
-}
+private fun durationOf(context: android.content.Context, uri: String): Long? = Videos.durationMillis(context, Uri.parse(uri))
 
 /** Whether Android's animations are off (Settings → Accessibility → Remove animations). */
 internal fun animationsOff(context: android.content.Context): Boolean =
@@ -83,7 +77,7 @@ internal fun animationsOff(context: android.content.Context): Boolean =
  * under it. Tap to watch it full screen.
  */
 @Composable
-internal fun VideoTile(file: Attachment, ink: Color, onPlay: () -> Unit, onLongPress: (() -> Unit)? = null) {
+internal fun VideoTile(file: Attachment, ink: Color, sent: String, onPlay: () -> Unit, onLongPress: (() -> Unit)? = null) {
     val context = LocalContext.current
     val frame by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, file.uri) {
         value = withContext(Dispatchers.IO) { Pictures.preview(context, file.uri, file.type, maxPx = 640) }
@@ -97,7 +91,8 @@ internal fun VideoTile(file: Attachment, ink: Color, onPlay: () -> Unit, onLongP
             .then(
                 Modifier.combinedClickableCompat(onClick = onPlay, onLongClick = onLongPress, label = label),
             )
-            .semantics { contentDescription = label },
+            // Read once, with when it was sent, so two videos don't sound the same.
+            .clearAndSetSemantics { contentDescription = "$label, $sent"; role = Role.Button },
     ) {
         Box(
             contentAlignment = Alignment.Center,
@@ -188,12 +183,13 @@ internal fun VideoPlayer(file: Attachment, onClose: () -> Unit, onSave: (() -> U
  * "0:04 of 0:12". It plays through the phone's media volume.
  */
 @Composable
-internal fun AudioRow(file: Attachment, ink: Color) {
+internal fun AudioRow(file: Attachment, ink: Color, sent: String) {
     val context = LocalContext.current
     var player by remember(file.uri) { mutableStateOf<MediaPlayer?>(null) }
     var playing by remember(file.uri) { mutableStateOf(false) }
     var at by remember(file.uri) { mutableIntStateOf(0) }
     var problem by remember(file.uri) { mutableStateOf(false) }
+    var loading by remember(file.uri) { mutableStateOf(false) }
     val length by produceState<Long?>(null, file.uri) { value = withContext(Dispatchers.IO) { durationOf(context, file.uri) } }
     DisposableEffect(file.uri) { onDispose { player?.release() } }
     LaunchedEffect(playing) {
@@ -203,12 +199,20 @@ internal fun AudioRow(file: Attachment, ink: Color) {
         }
     }
     fun toggle() {
+        if (loading) return
         if (playing) {
             player?.pause()
             playing = false
             return
         }
-        val p = player ?: try {
+        player?.let {
+            it.start()
+            playing = true
+            return
+        }
+        // Opened and readied off the main thread; it starts once it's ready.
+        loading = true
+        try {
             MediaPlayer().apply {
                 setAudioAttributes(
                     android.media.AudioAttributes.Builder()
@@ -218,14 +222,15 @@ internal fun AudioRow(file: Attachment, ink: Color) {
                 )
                 setDataSource(context, Uri.parse(file.uri))
                 setOnCompletionListener { playing = false; at = 0; seekTo(0) }
-                prepare()
-            }.also { player = it }
+                setOnPreparedListener { ready -> loading = false; ready.start(); playing = true }
+                setOnErrorListener { _, _, _ -> loading = false; playing = false; problem = true; true }
+                player = this
+                prepareAsync()
+            }
         } catch (e: Exception) {
+            loading = false
             problem = true
-            null
-        } ?: return
-        p.start()
-        playing = true
+        }
     }
     val total = length?.let(::clockOf)
     val where = if (playing || at > 0) clockOf(at.toLong()) + (total?.let { " of $it" } ?: "") else total ?: ""
@@ -235,7 +240,7 @@ internal fun AudioRow(file: Attachment, ink: Color) {
             OutlinedButton(
                 onClick = ::toggle,
                 enabled = !problem,
-                modifier = Modifier.heightIn(min = 56.dp).semantics { contentDescription = (if (playing) "Pause " else "Play ") + file.name },
+                modifier = Modifier.heightIn(min = 56.dp).semantics { contentDescription = (if (playing) "Pause " else "Play ") + "${file.name}, $sent" },
             ) { Text(if (playing) "❚❚ Pause" else "▶ Play", style = MaterialTheme.typography.titleMedium, color = ink) }
             Text(
                 if (problem) "Can't play here; use Save" else where,
