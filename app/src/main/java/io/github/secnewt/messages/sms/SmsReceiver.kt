@@ -29,12 +29,16 @@ class SmsReceiver : BroadcastReceiver() {
             try {
                 val store = MessageStore(context)
                 val reaction = Reactions.parse(body)
-                val threadId = store.saveIncoming(address, body, first.timestampMillis, subscription, read = reaction != null)
+                // A number Newt Phone blocks by its start: kept, but quietly, as already read.
+                val silenced = io.github.secnewt.messages.chats.BlockRules.blocked(context, address)
+                val threadId = store.saveIncoming(address, body, first.timestampMillis, subscription, read = reaction != null || silenced)
                 if (threadId == null) {
                     Log.w(TAG, "The message store refused an incoming text")
                     return@thread
                 }
-                if (reaction != null) {
+                if (silenced) {
+                    Log.i(TAG, "Stored a text from a blocked number, quietly")
+                } else if (reaction != null) {
                     val target = Reactions.target(reaction, store.raw(threadId).asReversed().drop(1))
                     Log.i(TAG, "Incoming reaction, ${if (target != null) "matched a message" else "no matching message"}")
                     Notifier(context).reaction(threadId, store.person(address), reaction, target)
