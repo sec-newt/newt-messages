@@ -463,6 +463,8 @@ class MainActivity : ComponentActivity() {
      * the words and attachments go back in that chat's message box.
      */
     private fun send(chat: Chat, text: String, attachments: List<io.github.secnewt.messages.chats.Attachment> = emptyList()) {
+        // Making a video small enough can take a little while; say so rather than seem stuck.
+        if (attachments.any { it.type.startsWith("video/") }) complain("Getting the video ready to send…")
         val problem = Outgoing.send(this, chat.people.map { it.address }, text, attachments) ?: return
         complain(problem)
         runOnUiThread {

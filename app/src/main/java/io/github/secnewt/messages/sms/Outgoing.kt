@@ -37,25 +37,54 @@ object Outgoing {
             .getInt(SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE, 300 * 1024)
         // Leave room for the words and the message's own headers.
         val room = limit * 9 / 10 - text.toByteArray().size - 2048
-        val pictures = attachments.count { it.type.startsWith("image/") }
-        val others = attachments.filterNot { it.type.startsWith("image/") }.map { file ->
+        fun isPicture(a: Attachment) = a.type.startsWith("image/")
+        fun isVideo(a: Attachment) = a.type.startsWith("video/")
+        val pictures = attachments.count(::isPicture)
+        val videos = attachments.filter(::isVideo)
+        // Files that are sent as they are: documents, contact cards, sound.
+        val others = attachments.filterNot { isPicture(it) || isVideo(it) }.map { file ->
             val bytes = runCatching { context.contentResolver.openInputStream(Uri.parse(file.uri))?.use { it.readBytes() } }.getOrNull()
                 ?: return "Couldn't read ${file.name}."
             Mms.Part(bytes, file.type, file.name)
         }
-        val left = room - others.sumOf { it.bytes.size }
-        if (left < 0 || (pictures > 0 && left < 20_000 * pictures)) {
+        var left = room - others.sumOf { it.bytes.size }
+        // Each picture needs at least a little room.
+        val forVideos = left - 20_000L * pictures
+        if (left < 0 || forVideos < 0) {
             return "Too big for a picture message: your carrier allows about ${limit / 1024} KB in all."
         }
+        // Videos share what's left (leaving the pictures their bit); a video too big is made smaller.
+        val shrunkVideos = videos.map { video ->
+            val share = (if (pictures > 0) forVideos * 7 / 10 else forVideos) / videos.size
+            val size = sizeOf(context, Uri.parse(video.uri))
+            if (size != null && size <= share) {
+                val bytes = runCatching { context.contentResolver.openInputStream(Uri.parse(video.uri))?.use { it.readBytes() } }.getOrNull()
+                    ?: return "Couldn't read ${video.name}."
+                Mms.Part(bytes, video.type, video.name)
+            } else {
+                val bytes = io.github.secnewt.messages.ui.Videos.shrink(context, Uri.parse(video.uri), share)
+                    ?: return "${video.name} is too long for a picture message. " +
+                        "About ${io.github.secnewt.messages.chats.VideoPlan.longestSeconds(share)} seconds fits."
+                Mms.Part(bytes, "video/mp4", video.name.substringBeforeLast('.') + ".mp4")
+            }
+        }
+        left -= shrunkVideos.sumOf { it.bytes.size }
         // Pictures are shrunk to share what's left.
-        val shrunk = attachments.filter { it.type.startsWith("image/") }.map { picture ->
-            val bytes = Pictures.forSending(context, Uri.parse(picture.uri), maxBytes = left / pictures)
+        val shrunk = attachments.filter(::isPicture).map { picture ->
+            val bytes = Pictures.forSending(context, Uri.parse(picture.uri), maxBytes = (left / pictures).toInt())
                 ?: return "${picture.name} couldn't be made small enough to send."
             Mms.Part(bytes, "image/jpeg", picture.name.substringBeforeLast('.') + ".jpg")
-        }
+        } + shrunkVideos
         Mms.send(context, to, text, shrunk + others)
         return null
     }
+
+    /** A file's size in bytes, if the app that has it says. */
+    private fun sizeOf(context: Context, uri: Uri): Long? = runCatching {
+        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use {
+            if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null
+        }
+    }.getOrNull()?.takeIf { it > 0 }
 
     /** Tries a message that failed again. Null when it's on its way, otherwise why not. */
     fun retry(context: Context, message: Message): String? = try {

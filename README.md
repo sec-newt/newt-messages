@@ -32,3 +32,16 @@ Obtainium from this repository's Releases page.
 - The People, Groups and Codes tabs show their unread count beside the icon.
 - **Group details:** each person is one short row. Tap it to text, call, change their
   color, add them to contacts, remove them, or block them.
+
+### Pictures, videos and sound
+
+- **Videos** show their first frame with **▶ Play video** and how long they are. Tap to
+  watch full screen, with big **Pause**, **Save** and **Close** buttons.
+- **Voice messages and other sound** have a **▶ Play** button right in the chat, showing
+  how far along it is ("0:04 of 0:12"). They play at media volume.
+- **GIFs move.** If Android's animations are off (Settings → Accessibility → Remove
+  animations), they stay still.
+- **Notifications show the picture** someone sent, not just "Picture".
+- **Sending a video:** if it's too big for a picture message, it's made smaller first, on
+  the phone; this can take a little while. A video too long to fit at a watchable size
+  isn't sent, and the message says about how many seconds would fit.
