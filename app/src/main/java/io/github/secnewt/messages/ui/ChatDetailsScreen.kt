@@ -104,6 +104,8 @@ fun ChatDetailsScreen(
     onDelete: () -> Unit,
     onPin: (Boolean) -> Unit = {},
     onMute: (Boolean) -> Unit = {},
+    /** Android's page for this chat's notifications (priority, its own sound). */
+    onNotificationSettings: (() -> Unit)? = null,
     isBlocked: (Person) -> Boolean = { false },
     onBlock: (Person, Boolean) -> Unit = { _, _ -> },
     /** Pick someone's color (null: back to automatic), for every chat or just this one. */
@@ -223,6 +225,12 @@ fun ChatDetailsScreen(
                 NewtSettingsCard("This chat", icon = Icons.Filled.Settings) {
                     NewtSwitchRow("Pin to top", chat.pinned, onPin, hint = "At the top of its tab")
                     NewtSwitchRow("Mute this chat", chat.muted, onMute, hint = "Messages still arrive")
+                    if (onNotificationSettings != null) {
+                        io.github.secnewt.ui.NewtValueRow(
+                            "Sound and alerts", null, onClick = onNotificationSettings,
+                            hint = "Its own sound, or make it a priority chat",
+                        )
+                    }
                 }
             }
             item {

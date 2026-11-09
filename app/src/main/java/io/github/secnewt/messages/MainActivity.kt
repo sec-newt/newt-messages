@@ -359,6 +359,11 @@ class MainActivity : ComponentActivity() {
                     io.github.secnewt.messages.settings.SettingsStore(this).setPinned(thread, on)
                     version++
                 },
+                onNotificationSettings = {
+                    runCatching { startActivity(io.github.secnewt.messages.notify.Conversations.settings(this, chat)) }.onFailure {
+                        Toast.makeText(this, "Android's notification settings didn't open.", Toast.LENGTH_LONG).show()
+                    }
+                },
                 onMute = { on ->
                     io.github.secnewt.messages.settings.SettingsStore(this).setMuted(thread, on)
                     version++
@@ -572,6 +577,7 @@ class MainActivity : ComponentActivity() {
         val removed = MessageStore(this).deleteChat(threadId)
         io.github.secnewt.messages.chats.Drafts(this).clear(threadId)
         Notifier(this).cancel(threadId)
+        io.github.secnewt.messages.notify.Conversations.remove(this, threadId)
         android.util.Log.i("NewtSms", "Deleted a chat ($removed messages)")
     }
 

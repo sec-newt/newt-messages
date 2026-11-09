@@ -208,6 +208,22 @@ class ChatScreensTest {
         onNewMembers = onNewMembers, onPickContact = {}, onDelete = onDelete, onPickColor = onPickColor,
     )
 
+    @Test
+    fun soundAndAlertsOpensThisChatsNotificationSettings() {
+        var opened = false
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatDetailsScreen(
+                    SampleChats.chats[0], onBack = {}, onText = {}, onCall = {}, onAddToContacts = {}, onRename = {},
+                    onNewMembers = {}, onPickContact = {}, onDelete = {}, onNotificationSettings = { opened = true },
+                )
+            }
+        }
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Sound and alerts"))
+        composeRule.onNodeWithText("Sound and alerts").performClick()
+        assertEquals(true, opened)
+    }
+
     // Pastor Dave's and Sam's names pick the same teal; the chat gives them different colors.
     private val church = @androidx.compose.runtime.Composable {
         val chat = SampleChats.chats[4]
