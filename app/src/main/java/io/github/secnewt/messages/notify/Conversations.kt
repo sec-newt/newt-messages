@@ -1,5 +1,7 @@
 package io.github.secnewt.messages.notify
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -51,18 +53,40 @@ object Conversations {
         return id
     }
 
-    /** A deleted chat stops being a conversation. */
+    /** A deleted chat stops being a conversation, and loses its own notification settings. */
     fun remove(context: Context, threadId: Long) {
         try {
             ShortcutManagerCompat.removeLongLivedShortcuts(context, listOf(id(threadId)))
+            context.getSystemService(NotificationManager::class.java).deleteNotificationChannel(channelId(threadId))
         } catch (e: Exception) {
             // Nothing to remove.
         }
     }
 
-    /** Android's own page for this chat's notifications: priority, its own sound, vibration. */
+    /**
+     * This chat's own notification channel, named the way Android names the ones it makes
+     * itself, so one Android already made is reused (and its settings kept), not doubled.
+     */
+    private fun channelId(threadId: Long) = "${Notifier.CHANNEL_MESSAGES} : ${id(threadId)}"
+
+    /**
+     * Android's own page for this chat's notifications: priority, its own sound, vibration.
+     * The chat gets its own channel first: without one, Android opens the page for every
+     * message, and a sound picked there would change every chat.
+     */
     fun settings(context: Context, chat: Chat): Intent {
         publish(context, chat)
+        val system = context.getSystemService(NotificationManager::class.java)
+        // Makes the shared one if it isn't there yet, which the chat's channel needs.
+        Notifier(context)
+        // Android hands back the shared channel when the chat has none of its own, so check whose it is.
+        if (system.getNotificationChannel(Notifier.CHANNEL_MESSAGES, id(chat.threadId))?.conversationId != id(chat.threadId)) {
+            system.createNotificationChannel(
+                NotificationChannel(channelId(chat.threadId), chat.title, NotificationManager.IMPORTANCE_HIGH).apply {
+                    setConversationId(Notifier.CHANNEL_MESSAGES, id(chat.threadId))
+                },
+            )
+        }
         return Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
             .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
             .putExtra(Settings.EXTRA_CHANNEL_ID, Notifier.CHANNEL_MESSAGES)
