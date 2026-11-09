@@ -54,6 +54,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.secnewt.messages.chats.Chat
 import io.github.secnewt.messages.chats.Message
+import io.github.secnewt.messages.chats.SendStatus
 import io.github.secnewt.ui.ScreenHeader
 import io.github.secnewt.ui.neonFieldColors
 
@@ -76,6 +77,8 @@ fun ChatScreen(
     cantSend: String? = null,
     /** Fetch a picture or group message that didn't download. */
     onDownload: (Message) -> Unit = {},
+    /** Send one of my messages again after it failed. */
+    onRetry: ((Message) -> Unit)? = null,
     /** Attach something to send; [attached] says what's attached, if anything. */
     onAttach: ((AttachKind) -> Unit)? = null,
     attached: String? = null,
@@ -183,6 +186,8 @@ fun ChatScreen(
         // follow new messages when already at the newest end, and always after I send one.
         val list = androidx.compose.foundation.lazy.rememberLazyListState()
         val newest = messages.lastOrNull()
+        // Sent and Delivered show on my newest message only; Sending and failures show on every one.
+        val newestMine = messages.lastOrNull { it.mine }?.id
         androidx.compose.runtime.LaunchedEffect(newest?.id) {
             if (newest != null && (newest.mine || list.firstVisibleItemIndex <= 1)) list.animateScrollToItem(0)
         }
@@ -200,6 +205,8 @@ fun ChatScreen(
                     onOptions = { acting = message },
                     onShowReactions = { reactionsOf = message },
                     onNumber = { number = it },
+                    showStatus = message.id == newestMine || message.status == SendStatus.SENDING || message.status.failed,
+                    onRetry = onRetry?.let { retry -> { retry(message) } },
                 )
             }
         }
@@ -219,11 +226,16 @@ private fun Bubble(
     onOptions: (() -> Unit)? = null,
     onShowReactions: () -> Unit = {},
     onNumber: (String) -> Unit = {},
+    showStatus: Boolean = false,
+    onRetry: (() -> Unit)? = null,
 ) {
+    val status = message.status.takeIf { showStatus && it != SendStatus.NONE }
+    val canRetry = status?.failed == true && onRetry != null
     // Long-press for react / copy / forward / delete; screen readers get it as an action instead.
     val options = listOfNotNull(
         onOptions?.let { open -> androidx.compose.ui.semantics.CustomAccessibilityAction("Message options") { open(); true } },
         if (message.reactions.isNotEmpty()) androidx.compose.ui.semantics.CustomAccessibilityAction("See who reacted") { onShowReactions(); true } else null,
+        if (canRetry) androidx.compose.ui.semantics.CustomAccessibilityAction("Try again") { onRetry?.invoke(); true } else null,
     ).ifEmpty { null }
     val who = message.from?.shownName
     val color = hue?.outline() ?: MaterialTheme.colorScheme.primary
@@ -233,13 +245,14 @@ private fun Bubble(
         if (message.images.isNotEmpty()) append(", ${message.images.size} picture${if (message.images.size > 1) "s" else ""}")
         append(": ${message.body}. $time")
         if (reactions.isNotEmpty()) append(". Reactions: $reactions")
+        if (status != null) append(". ${status.label}")
     }
     Row(
         // The whole row (avatar, bubble and the space beside it) is the long-press target.
         modifier = Modifier.fillMaxWidth()
             .then(if (onOptions != null) Modifier.pointerInput(onOptions) { detectTapGestures(onLongPress = { onOptions() }) } else Modifier)
             .then(
-            if (message.waiting || message.images.isNotEmpty() || message.files.isNotEmpty() || Links.find(message.body).isNotEmpty()) {
+            if (canRetry || message.waiting || message.images.isNotEmpty() || message.files.isNotEmpty() || Links.find(message.body).isNotEmpty()) {
                 Modifier.semantics(mergeDescendants = false) { if (options != null) customActions = options }
             } else {
                 Modifier.clearAndSetSemantics {
@@ -314,6 +327,7 @@ private fun Bubble(
                 }
                 Text(time, fontFamily = io.github.secnewt.ui.NewtFonts.Mono, fontSize = 16.sp, color = dim)
             }
+            if (status != null) SendStatusLine(status, if (canRetry) onRetry else null)
             if (message.reactions.isNotEmpty()) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -334,6 +348,37 @@ private fun Bubble(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Under my message: Sending…, Sent or Delivered quietly; Not sent or Not delivered loudly, in
+ * the danger color with a warning sign (not color alone), and a Try again button.
+ */
+@Composable
+private fun SendStatusLine(status: SendStatus, onRetry: (() -> Unit)?) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(top = 4.dp),
+    ) {
+        if (status.failed) {
+            Text(
+                "⚠ ${status.label}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.error,
+            )
+            if (onRetry != null) {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = onRetry,
+                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.error),
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) { Text("Try again", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error) }
+            }
+        } else {
+            Text(status.label, fontFamily = io.github.secnewt.ui.NewtFonts.Mono, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

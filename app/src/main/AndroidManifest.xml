@@ -108,6 +108,7 @@
 
         <!-- The app's own reports and notification buttons; nothing outside can reach them. -->
         <receiver android:name=".sms.SentReceiver" android:exported="false" />
+        <receiver android:name=".sms.DeliveredReceiver" android:exported="false" />
         <receiver android:name=".notify.ActionReceiver" android:exported="false" />
         <receiver android:name=".mms.MmsResultReceiver" android:exported="false" />
 

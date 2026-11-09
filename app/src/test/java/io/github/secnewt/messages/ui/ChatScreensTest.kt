@@ -127,6 +127,55 @@ class ChatScreensTest {
         assertEquals(-6L, retried)
     }
 
+    private val sendingProblems = listOf(
+        io.github.secnewt.messages.chats.Message(1, "See you at 6", 8 * SampleChats.HOUR, SampleChats.becca),
+        io.github.secnewt.messages.chats.Message(2, "On my way", 9 * SampleChats.HOUR, status = io.github.secnewt.messages.chats.SendStatus.DELIVERED),
+        io.github.secnewt.messages.chats.Message(3, "Running late, 10 minutes", 10 * SampleChats.HOUR, status = io.github.secnewt.messages.chats.SendStatus.FAILED),
+        io.github.secnewt.messages.chats.Message(4, "Parking now", 10 * SampleChats.HOUR + 60_000, status = io.github.secnewt.messages.chats.SendStatus.SENT),
+    )
+
+    private val withProblems = @androidx.compose.runtime.Composable {
+        ChatScreen(
+            SampleChats.chats[0], sendingProblems, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
+            time = SampleChats.time, onRetry = {},
+        )
+    }
+
+    @Test fun notSentDark() = composeRule.newtScreenshot("chat-not-sent-dark", dark = true, content = withProblems)
+    @Test fun notSentLight() = composeRule.newtScreenshot("chat-not-sent-light", dark = false, content = withProblems)
+    @Test fun notSentLargeText() = composeRule.newtScreenshot("chat-not-sent-200pct", dark = true, fontScale = 2f, content = withProblems)
+
+    @Test
+    fun aMessageThatDidntSendSaysSoAndCanBeTriedAgain() {
+        var retried: Long? = null
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatScreen(
+                    SampleChats.chats[0], sendingProblems, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
+                    time = SampleChats.time, onRetry = { retried = it.id },
+                )
+            }
+        }
+        composeRule.onNodeWithText("⚠ Not sent").assertIsDisplayed()
+        // Sent shows on my newest message only; Delivered on an older one is left out.
+        // (A screen reader hears it at the end of the message.)
+        composeRule.onNodeWithContentDescription("Parking now", substring = true)
+            .assert(androidx.compose.ui.test.hasContentDescription(". Sent", substring = true))
+        composeRule.onAllNodes(hasContentDescription("Delivered", substring = true)).assertCountEquals(0)
+        composeRule.onNodeWithText("Try again").assertIsDisplayed().performClick()
+        assertEquals(3L, retried)
+    }
+
+    @Test
+    fun aChatWhoseLastMessageFailedSaysSoInTheList() {
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatListScreen(listOf(SampleChats.chats[1].copy(failed = true)), ChatTab.PEOPLE, onTab = {}, onOpen = {}, time = SampleChats.time)
+            }
+        }
+        composeRule.onNodeWithContentDescription("Not sent: Love you! Call me Sunday", substring = true).assertIsDisplayed()
+    }
+
     @Test
     fun attachingAPicture() = composeRule.newtScreenshot("chat-attached-dark", dark = true) {
         ChatScreen(
