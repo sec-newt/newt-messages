@@ -89,15 +89,17 @@ object Mms {
             val persister = PduPersister.getPduPersister(context)
             val uri = persister.persist(message, Telephony.Mms.Inbox.CONTENT_URI, true, true, null, subscription)
             context.contentResolver.delete(noticeUri, null, null)
+            // A number Newt Phone blocks by its start: kept, but quietly, as already read.
+            val silenced = io.github.secnewt.messages.chats.BlockRules.blocked(context, message.getFrom()?.getString())
             val values = ContentValues().apply {
-                put(Telephony.Mms.READ, 0)
-                put(Telephony.Mms.SEEN, 0)
+                put(Telephony.Mms.READ, if (silenced) 1 else 0)
+                put(Telephony.Mms.SEEN, if (silenced) 1 else 0)
                 put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000)
             }
             context.contentResolver.update(uri, values, null, null)
             Log.i(TAG, "Stored an incoming MMS")
             message.getTransactionId()?.let { acknowledge(context, it, subscription) }
-            threadOf(context, uri)?.let { Notifier(context).update(it, announce = true) }
+            if (!silenced) threadOf(context, uri)?.let { Notifier(context).update(it, announce = true) }
         } finally {
             file.delete()
         }

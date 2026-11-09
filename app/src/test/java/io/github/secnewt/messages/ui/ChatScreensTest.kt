@@ -167,6 +167,31 @@ class ChatScreensTest {
     }
 
     @Test
+    fun olderMessagesCanBeShown() {
+        var asked = false
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatScreen(
+                    SampleChats.chats[0], sendingProblems, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
+                    time = SampleChats.time, onShowOlder = { asked = true },
+                )
+            }
+        }
+        composeRule.onNodeWithText("Show older messages").assertIsDisplayed().performClick()
+        assertEquals(true, asked)
+    }
+
+    @Test
+    fun noOlderMessagesNoButton() {
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatScreen(SampleChats.chats[0], sendingProblems, draft = "", onDraftChange = {}, onSend = {}, onBack = {}, time = SampleChats.time)
+            }
+        }
+        composeRule.onAllNodesWithText("Show older messages").assertCountEquals(0)
+    }
+
+    @Test
     fun aChatWhoseLastMessageFailedSaysSoInTheList() {
         composeRule.setContent {
             io.github.secnewt.ui.NewtTheme(darkTheme = true) {
@@ -207,6 +232,22 @@ class ChatScreensTest {
         chat, onBack = {}, onText = {}, onCall = {}, onAddToContacts = onAddToContacts, onRename = {},
         onNewMembers = onNewMembers, onPickContact = {}, onDelete = onDelete, onPickColor = onPickColor,
     )
+
+    @Test
+    fun soundAndAlertsOpensThisChatsNotificationSettings() {
+        var opened = false
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatDetailsScreen(
+                    SampleChats.chats[0], onBack = {}, onText = {}, onCall = {}, onAddToContacts = {}, onRename = {},
+                    onNewMembers = {}, onPickContact = {}, onDelete = {}, onNotificationSettings = { opened = true },
+                )
+            }
+        }
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Sound and alerts"))
+        composeRule.onNodeWithText("Sound and alerts").performClick()
+        assertEquals(true, opened)
+    }
 
     // Pastor Dave's and Sam's names pick the same teal; the chat gives them different colors.
     private val church = @androidx.compose.runtime.Composable {

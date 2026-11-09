@@ -63,11 +63,17 @@ class Notifier(private val context: Context) {
             manager.cancel(threadId.toInt())
             return
         }
-        val people = store.people(threadId)
+        val chat = store.chats().firstOrNull { it.threadId == threadId }
+        val people = chat?.people ?: store.people(threadId)
         val me = NotificationPerson.Builder().setName("You").build()
         val style = NotificationCompat.MessagingStyle(me)
-        if (people.size > 1) style.setGroupConversation(true).setConversationTitle(people.joinToString(", ") { it.shownName })
-        unread.forEach { style.addMessage(it.body, it.timeMillis, it.from?.toNotificationPerson()) }
+        if (people.size > 1) style.setGroupConversation(true).setConversationTitle(chat?.title ?: people.joinToString(", ") { it.shownName })
+        // Each sender once (their photo is read once), however many messages they sent.
+        val senders = mutableMapOf<String, NotificationPerson>()
+        unread.forEach { message ->
+            val from = message.from?.let { p -> senders.getOrPut(p.address) { Conversations.notificationPerson(context, p) } }
+            style.addMessage(message.body, message.timeMillis, from)
+        }
 
         val builder = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
             .setSmallIcon(R.drawable.ic_launcher_monochrome)
@@ -76,8 +82,12 @@ class Notifier(private val context: Context) {
             .setContentIntent(open(threadId))
             .setAutoCancel(true)
             .addAction(markRead(threadId))
-        // Replying from the notification only for one-to-one chats until group texts (MMS) work.
-        if (people.size == 1) builder.addAction(reply(threadId, people.first().address))
+        // A conversation: its own place in the shade, and it can be a priority or have its own sound.
+        chat?.let { Conversations.publish(context, it) }?.let { id ->
+            builder.setShortcutId(id).setLocusId(androidx.core.content.LocusIdCompat(id))
+        }
+        // Replying works for groups too: the reply goes to everyone, as a group message.
+        if (people.isNotEmpty()) builder.addAction(reply(threadId))
         Codes.find(unread.last().body)?.let { builder.addAction(copy(it)) }
         post(threadId.toInt(), builder.build())
         if (announce) {
@@ -126,6 +136,19 @@ class Notifier(private val context: Context) {
         post(MMS_ID + threadId.toInt(), notification)
     }
 
+    /** A reply from the notification couldn't be sent; say so, so it isn't thought gone. */
+    fun replyFailed(threadId: Long, why: String) {
+        val notification = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
+            .setContentTitle("Your reply wasn't sent")
+            .setContentText(why)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(why))
+            .setContentIntent(open(threadId))
+            .setAutoCancel(true)
+            .build()
+        post(threadId.toInt(), notification)
+    }
+
     fun cancel(threadId: Long) = manager.cancel(threadId.toInt())
 
     private fun post(id: Int, notification: android.app.Notification) {
@@ -136,8 +159,6 @@ class Notifier(private val context: Context) {
             // Notifications were turned off between the check and now.
         }
     }
-
-    private fun Person.toNotificationPerson() = NotificationPerson.Builder().setName(shownName).setKey(address).build()
 
     private fun open(threadId: Long): PendingIntent = PendingIntent.getActivity(
         context, threadId.toInt(),
@@ -154,13 +175,13 @@ class Notifier(private val context: Context) {
         ),
     ).setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ).build()
 
-    private fun reply(threadId: Long, address: String): NotificationCompat.Action {
+    private fun reply(threadId: Long): NotificationCompat.Action {
         val input = RemoteInput.Builder(ActionReceiver.EXTRA_REPLY).setLabel("Reply").build()
         // Mutable: Android puts the typed reply into it.
         val intent = PendingIntent.getBroadcast(
             context, threadId.toInt(),
             Intent(context, ActionReceiver::class.java).setAction(ActionReceiver.REPLY)
-                .putExtra(ActionReceiver.EXTRA_THREAD, threadId).putExtra(ActionReceiver.EXTRA_ADDRESS, address),
+                .putExtra(ActionReceiver.EXTRA_THREAD, threadId),
             PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         return NotificationCompat.Action.Builder(0, "Reply", intent)

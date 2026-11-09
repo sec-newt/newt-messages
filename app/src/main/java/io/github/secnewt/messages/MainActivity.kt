@@ -305,7 +305,12 @@ class MainActivity : ComponentActivity() {
             drafts.keep(thread, draft)
             attachments = back.attachments + attachments
         }
-        val messages by produceState(emptyList<Message>(), thread, version) { value = withContext(Dispatchers.IO) { store.messages(thread) } }
+        // The newest messages first; "Show older messages" reaches further back, a page at a time.
+        var reach by rememberSaveable(thread) { mutableIntStateOf(MessageStore.PAGE) }
+        val page by produceState(MessageStore.Page(emptyList(), false), thread, version, reach) {
+            value = withContext(Dispatchers.IO) { store.page(thread, reach) }
+        }
+        val messages = page.messages
         LaunchedEffect(thread, version) {
             withContext(Dispatchers.IO) {
                 store.markRead(thread)
@@ -359,6 +364,11 @@ class MainActivity : ComponentActivity() {
                     io.github.secnewt.messages.settings.SettingsStore(this).setPinned(thread, on)
                     version++
                 },
+                onNotificationSettings = {
+                    runCatching { startActivity(io.github.secnewt.messages.notify.Conversations.settings(this, chat)) }.onFailure {
+                        Toast.makeText(this, "Android's notification settings didn't open.", Toast.LENGTH_LONG).show()
+                    }
+                },
                 onMute = { on ->
                     io.github.secnewt.messages.settings.SettingsStore(this).setMuted(thread, on)
                     version++
@@ -391,6 +401,7 @@ class MainActivity : ComponentActivity() {
             onBack = { openThread = null },
             time = ::time,
             onDownload = { message -> Thread { retry(message) }.start() },
+            onShowOlder = if (page.hasOlder) ({ reach += MessageStore.PAGE }) else null,
             onRetry = { message ->
                 Thread { Outgoing.retry(this, message)?.let(::complain) }.start()
             },
@@ -572,6 +583,7 @@ class MainActivity : ComponentActivity() {
         val removed = MessageStore(this).deleteChat(threadId)
         io.github.secnewt.messages.chats.Drafts(this).clear(threadId)
         Notifier(this).cancel(threadId)
+        io.github.secnewt.messages.notify.Conversations.remove(this, threadId)
         android.util.Log.i("NewtSms", "Deleted a chat ($removed messages)")
     }
 

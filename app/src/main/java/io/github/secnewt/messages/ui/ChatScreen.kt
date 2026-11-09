@@ -77,6 +77,8 @@ fun ChatScreen(
     cantSend: String? = null,
     /** Fetch a picture or group message that didn't download. */
     onDownload: (Message) -> Unit = {},
+    /** Reach further back: there are older messages than these. Null when these are all. */
+    onShowOlder: (() -> Unit)? = null,
     /** Send one of my messages again after it failed. */
     onRetry: ((Message) -> Unit)? = null,
     /** Attach something to send; [attached] says what's attached, if anything. */
@@ -208,6 +210,16 @@ fun ChatScreen(
                     showStatus = message.id == newestMine || message.status == SendStatus.SENDING || message.status.failed,
                     onRetry = onRetry?.let { retry -> { retry(message) } },
                 )
+            }
+            // At the top, above the oldest message shown (the list is drawn bottom-up).
+            if (onShowOlder != null) {
+                item(key = "older") {
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        androidx.compose.material3.OutlinedButton(onClick = onShowOlder, modifier = Modifier.heightIn(min = 56.dp)) {
+                            Text("Show older messages", style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+                }
             }
         }
     }
