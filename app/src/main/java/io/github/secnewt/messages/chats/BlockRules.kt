@@ -11,10 +11,11 @@ import android.net.Uri
  */
 object BlockRules {
 
-    private val URI: Uri by lazy { Uri.parse("content://io.github.secnewt.dialer.blockrules/startswith") }
+    private val URI: Uri by lazy { Uri.parse("content://$AUTHORITY/startswith") }
 
     /** The starting digits Newt Phone blocks; empty without Newt Phone or its permission. */
     fun startsWith(context: Context): List<String> = try {
+        if (!fromNewtPhone(context)) return emptyList()
         context.contentResolver.query(URI, null, null, null, null)?.use { c ->
             buildList { while (c.moveToNext()) c.getString(0)?.let(::add) }
         }.orEmpty()
@@ -22,6 +23,20 @@ object BlockRules {
         // Newt Phone isn't installed, or hasn't granted this yet.
         emptyList()
     }
+
+    /**
+     * Only Newt Phone itself, signed with the same Newt key as this app. Without Newt Phone,
+     * another app could claim this provider's name and hand over rules that silence texts.
+     */
+    private fun fromNewtPhone(context: Context): Boolean {
+        val pm = context.packageManager
+        val provider = pm.resolveContentProvider(AUTHORITY, 0) ?: return false
+        return provider.packageName == NEWT_PHONE &&
+            pm.checkSignatures(context.packageName, NEWT_PHONE) == android.content.pm.PackageManager.SIGNATURE_MATCH
+    }
+
+    private const val NEWT_PHONE = "io.github.secnewt.dialer"
+    private const val AUTHORITY = "$NEWT_PHONE.blockrules"
 
     /** Whether [sender] is blocked by one of [prefixes], compared exactly as Newt Phone does. */
     fun blocks(prefixes: List<String>, sender: String?): Boolean {
