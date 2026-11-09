@@ -82,6 +82,9 @@ class TimelineTest {
         assertEquals("AMAZON", PhoneFormat.pretty("AMAZON"))
         assertEquals("+442071234567", PhoneFormat.pretty("+442071234567"))
         assertEquals("me@example.com", PhoneFormat.pretty("me@example.com"))
+        // Off a US phone, only a number with +1 is surely American.
+        assertEquals("9876543210", PhoneFormat.pretty("9876543210", country = "IN"))
+        assertEquals("(214) 555-0155", PhoneFormat.pretty("+12145550155", country = "GB"))
     }
 
     @Test

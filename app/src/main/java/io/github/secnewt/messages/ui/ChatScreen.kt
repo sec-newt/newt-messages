@@ -108,8 +108,8 @@ fun ChatScreen(
     onAddNumberToContacts: ((String) -> Unit)? = null,
     /** Who a message was really from and to, and when (read from the message store). */
     loadDetails: (suspend (Message) -> io.github.secnewt.messages.chats.MessageDetails?)? = null,
-    /** Now, for "Today" and "Yesterday" between days. */
-    now: Long = System.currentTimeMillis(),
+    /** Now, for "Today" and "Yesterday" between days; null keeps the phone's clock (checked each minute). */
+    now: Long? = null,
 ) {
     var acting by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Message?>(null) }
     var reactionsOf by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Message?>(null) }
@@ -200,17 +200,38 @@ fun ChatScreen(
         val newest = messages.lastOrNull()
         // Sent and Delivered show on my newest message only; Sending and failures show on every one.
         val newestMine = messages.lastOrNull { it.mine }?.id
+        // Follow a new message when the one before it was showing (a day line may come in with
+        // it, so this goes by which messages are on screen, not by position), and always after I send.
+        var lastNewest by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(newest?.id) }
         androidx.compose.runtime.LaunchedEffect(newest?.id) {
-            if (newest != null && (newest.mine || list.firstVisibleItemIndex <= 1)) list.animateScrollToItem(0)
+            val before = lastNewest
+            lastNewest = newest?.id
+            if (newest == null || before == newest.id) return@LaunchedEffect
+            val wasShowing = before == null || list.layoutInfo.visibleItemsInfo.any { it.key == before }
+            if (newest.mine || wasShowing) list.animateScrollToItem(0)
         }
-        // Scrolled back up: a "Newest" button to jump down, counting messages that came since.
-        val away by androidx.compose.runtime.remember { androidx.compose.runtime.derivedStateOf { list.firstVisibleItemIndex > 2 } }
+        // The newest message isn't on screen: a "Newest" button to jump down, counting messages that came since.
+        val newestId = androidx.compose.runtime.rememberUpdatedState(newest?.id)
+        val away by androidx.compose.runtime.remember {
+            androidx.compose.runtime.derivedStateOf {
+                val shown = list.layoutInfo.visibleItemsInfo
+                shown.isNotEmpty() && newestId.value != null && shown.none { it.key == newestId.value }
+            }
+        }
         var seen by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(newest?.id) }
         androidx.compose.runtime.LaunchedEffect(away, newest?.id) { if (!away) seen = newest?.id }
         val unseen = messages.indexOfLast { it.id == seen }.let { at -> if (at < 0) 0 else messages.size - 1 - at }
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         // Who sent what, grouped: the name once, the picture and time once, a line between days.
-        val places = androidx.compose.runtime.remember(messages, now) { io.github.secnewt.messages.chats.Timeline.place(messages, now) }
+        val clock by androidx.compose.runtime.produceState(now ?: System.currentTimeMillis(), now) {
+            if (now == null) while (true) {
+                kotlinx.coroutines.delay(60_000)
+                value = System.currentTimeMillis()
+            }
+        }
+        // Worked out again only when the messages or the day change, not on every keystroke.
+        val today = clock / 3_600_000 // the hour is enough to notice midnight
+        val places = androidx.compose.runtime.remember(messages, today) { io.github.secnewt.messages.chats.Timeline.place(messages, clock) }
         Box(Modifier.fillMaxSize().padding(padding)) {
         LazyColumn(
             state = list,
@@ -407,7 +428,8 @@ private fun Bubble(
                         Text("Download", style = MaterialTheme.typography.titleMedium, color = ink)
                     }
                 }
-                if (last) Text(time, fontFamily = io.github.secnewt.ui.NewtFonts.Mono, fontSize = 16.sp, color = dim)
+                // The time shows once per group, and on any message that's still going or didn't go.
+                if (last || message.status == SendStatus.SENDING || message.status.failed) Text(time, fontFamily = io.github.secnewt.ui.NewtFonts.Mono, fontSize = 16.sp, color = dim)
             }
             if (status != null) SendStatusLine(status, if (canRetry) onRetry else null)
             if (message.reactions.isNotEmpty()) {
@@ -550,14 +572,16 @@ private fun AttachmentStrip(attached: List<io.github.secnewt.messages.chats.Atta
 private fun AttachmentTile(file: io.github.secnewt.messages.chats.Attachment, onRemove: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val picture = file.type.startsWith("image/") || file.type.startsWith("video/")
-    val image by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, file.uri) {
+    val image by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, file.uri, file.type) {
+        // Start empty: this slot may have shown a different attachment before.
+        value = null
         if (picture) value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Pictures.preview(context, file.uri, file.type) }
     }
     val shape = RoundedCornerShape(12.dp)
-    Box(Modifier.size(width = 112.dp, height = 112.dp)) {
+    Column(Modifier.width(112.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier.fillMaxSize().clip(shape)
+            modifier = Modifier.size(112.dp).clip(shape)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .border(io.github.secnewt.ui.neonOutline(), shape),
         ) {
@@ -581,17 +605,12 @@ private fun AttachmentTile(file: io.github.secnewt.messages.chats.Attachment, on
                 )
             }
         }
-        // Remove, in the corner: a dark circle with a white ✕, big enough to hit.
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.align(Alignment.TopEnd).size(48.dp)
-                .clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "Remove") { onRemove() }
-                .semantics { contentDescription = "Remove ${file.name}" },
+        // A worded button under each one, so it's clear which one comes off.
+        androidx.compose.material3.TextButton(
+            onClick = onRemove,
+            modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Remove ${file.name}" },
         ) {
-            Icon(
-                Icons.Filled.Close, contentDescription = null, tint = Color.White,
-                modifier = Modifier.size(32.dp).background(Color.Black.copy(alpha = 0.75f), CircleShape).border(1.5.dp, Color.White, CircleShape).padding(4.dp),
-            )
+            Text("Remove", style = MaterialTheme.typography.titleMedium)
         }
     }
 }

@@ -19,17 +19,20 @@ data class Person(
 object PhoneFormat {
     /**
      * "(214) 555-0155" for a US number, with or without its +1, so it fits on one line and
-     * reads the way it's said. Short codes, named senders and other countries' numbers are
+     * reads the way it's said. Numbers without +1 only on a US phone. Short codes, named senders and other countries' numbers are
      * left as they came.
      */
-    fun pretty(address: String): String {
+    fun pretty(address: String, country: String = java.util.Locale.getDefault().country): String {
         val trimmed = address.trim()
         if (trimmed.any { it.isLetter() }) return trimmed
         if (trimmed.any { !it.isDigit() && it !in "+-(). " }) return trimmed
         val digits = trimmed.filter { it.isDigit() }
+        // Without a +1, a number is only taken as American on an American phone.
+        val us = country.equals("US", ignoreCase = true) || country.isEmpty()
         val national = when {
-            digits.length == 10 && !trimmed.startsWith("+") -> digits
-            digits.length == 11 && digits.startsWith("1") && (trimmed.startsWith("+1") || !trimmed.startsWith("+")) -> digits.substring(1)
+            digits.length == 11 && trimmed.startsWith("+1") -> digits.substring(1)
+            us && digits.length == 10 && !trimmed.startsWith("+") -> digits
+            us && digits.length == 11 && digits.startsWith("1") && !trimmed.startsWith("+") -> digits.substring(1)
             else -> return trimmed
         }
         return "(${national.substring(0, 3)}) ${national.substring(3, 6)}-${national.substring(6)}"
