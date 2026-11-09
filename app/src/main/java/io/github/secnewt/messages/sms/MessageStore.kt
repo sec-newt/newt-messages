@@ -53,7 +53,19 @@ class MessageStore(private val context: Context) {
     }
 
     /** A chat's messages as shown (reactions folded onto their messages), oldest first. */
-    fun messages(threadId: Long, limit: Int = 600): List<Message> = Folding.fold(raw(threadId, limit))
+    fun messages(threadId: Long, limit: Int = PAGE): List<Message> = Folding.fold(raw(threadId, limit))
+
+    /** The newest [limit] stored messages, shown, and whether there are older ones beyond them. */
+    data class Page(val messages: List<Message>, val hasOlder: Boolean)
+
+    fun page(threadId: Long, limit: Int = PAGE): Page {
+        val sms = rawSms(threadId, limit)
+        val mms = rawMms(threadId, limit)
+        val all = (sms + mms).sortedBy { it.timeMillis }
+        // Either kind filling its limit means there may be more of it.
+        val hasOlder = sms.size >= limit || mms.size >= limit || all.size > limit
+        return Page(Folding.fold(all.takeLast(limit)), hasOlder)
+    }
 
     /** Every stored message (SMS and MMS), reactions included, oldest first. */
     fun raw(threadId: Long, limit: Int = 600): List<Message> =
@@ -455,17 +467,20 @@ class MessageStore(private val context: Context) {
         } ?: 0
     }
 
-    private companion object {
+    companion object {
+        /** How many messages a chat shows at first, and how many more each "Show older messages" adds. */
+        const val PAGE = 600
+
         /** MMS message type 130: a notice that a message is waiting at the carrier. */
-        const val PduHeadersNotification = 130
+        private const val PduHeadersNotification = 130
 
         /**
          * Real messages only: sent (128), waiting (130) and downloaded (132). Not delivery
          * reports (134) or read reports (136), which Android also files in the inbox.
          */
-        val REAL_MMS = "${Telephony.Mms.MESSAGE_TYPE} IN (128, 130, 132)"
+        private val REAL_MMS = "${Telephony.Mms.MESSAGE_TYPE} IN (128, 130, 132)"
 
         /** Numbers compare by their last 10 digits, so "+1 (972) 555-0111" matches "9725550111". */
-        fun numberKey(number: String): String = io.github.secnewt.messages.chats.ChatColors.key(number)
+        private fun numberKey(number: String): String = io.github.secnewt.messages.chats.ChatColors.key(number)
     }
 }

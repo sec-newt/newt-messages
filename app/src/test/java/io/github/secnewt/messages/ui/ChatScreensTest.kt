@@ -167,6 +167,31 @@ class ChatScreensTest {
     }
 
     @Test
+    fun olderMessagesCanBeShown() {
+        var asked = false
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatScreen(
+                    SampleChats.chats[0], sendingProblems, draft = "", onDraftChange = {}, onSend = {}, onBack = {},
+                    time = SampleChats.time, onShowOlder = { asked = true },
+                )
+            }
+        }
+        composeRule.onNodeWithText("Show older messages").assertIsDisplayed().performClick()
+        assertEquals(true, asked)
+    }
+
+    @Test
+    fun noOlderMessagesNoButton() {
+        composeRule.setContent {
+            io.github.secnewt.ui.NewtTheme(darkTheme = true) {
+                ChatScreen(SampleChats.chats[0], sendingProblems, draft = "", onDraftChange = {}, onSend = {}, onBack = {}, time = SampleChats.time)
+            }
+        }
+        composeRule.onAllNodesWithText("Show older messages").assertCountEquals(0)
+    }
+
+    @Test
     fun aChatWhoseLastMessageFailedSaysSoInTheList() {
         composeRule.setContent {
             io.github.secnewt.ui.NewtTheme(darkTheme = true) {

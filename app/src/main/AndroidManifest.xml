@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Newt Phone's "starting with" block rules (only Newt-signed apps get this; nobody is asked). -->
+    <uses-permission android:name="io.github.secnewt.dialer.permission.BLOCK_RULES" />
 
     <uses-feature android:name="android.hardware.telephony" android:required="true" />
 
@@ -20,6 +22,8 @@
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
+        <!-- Lets Newt Messages see Newt Phone's block rules (see the permission above). -->
+        <provider android:authorities="io.github.secnewt.dialer.blockrules" />
     </queries>
 
     <!-- Lets other apps signed with the Newt key (Newt Home) read how many messages are unread:
