@@ -188,11 +188,17 @@ class MessageStore(private val context: Context) {
         }
     }
 
+    /** A not-yet-downloaded message: its notice, where it waits at the carrier, and the SIM it came in on. */
+    data class Waiting(val notice: Uri, val location: String, val subscription: Int)
+
     /** Where a not-yet-downloaded message waits at the carrier, for Retry. */
-    fun waitingNotice(messageId: Long): Pair<Uri, String>? {
+    fun waitingNotice(messageId: Long): Waiting? {
         val uri = Uri.withAppendedPath(Telephony.Mms.CONTENT_URI, (-messageId).toString())
-        return resolver.query(uri, arrayOf(Telephony.Mms.CONTENT_LOCATION), null, null, null)
-            ?.use { if (it.moveToFirst()) it.getString(0)?.let { location -> uri to location } else null }
+        return resolver.query(uri, arrayOf(Telephony.Mms.CONTENT_LOCATION, Telephony.Mms.SUBSCRIPTION_ID), null, null, null)?.use {
+            if (!it.moveToFirst()) return@use null
+            val location = it.getString(0) ?: return@use null
+            Waiting(uri, location, if (it.isNull(1)) -1 else it.getInt(1))
+        }
     }
 
     /** Unread messages in a chat that aren't reactions, oldest first, for its notification. */

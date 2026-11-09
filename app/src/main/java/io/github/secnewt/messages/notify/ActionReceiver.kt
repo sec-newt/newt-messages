@@ -45,11 +45,12 @@ class ActionReceiver : BroadcastReceiver() {
                 scheduleClear(context)
             }
             CLEAR_CODE -> try {
-                val clipboard = context.getSystemService(ClipboardManager::class.java)
-                // Only clear it if it's still our code, not something copied since.
-                if (clipboard.primaryClipDescription?.label == CLIP_LABEL) clipboard.clearPrimaryClip()
+                // Android doesn't let an app in the background look at the clipboard (it reads as
+                // empty), so there's no checking whether the code is still there: it's cleared
+                // either way. Something copied in the two minutes since goes too.
+                context.getSystemService(ClipboardManager::class.java).clearPrimaryClip()
             } catch (e: Exception) {
-                // Android may not let a background app look at the clipboard; nothing to undo then.
+                // Clearing isn't allowed either; Android clears the clipboard itself after an hour.
             }
         }
     }

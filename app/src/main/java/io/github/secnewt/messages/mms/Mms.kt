@@ -86,6 +86,10 @@ object Mms {
                 threadOf(context, noticeUri)?.let { Notifier(context).mmsFailed(it) }
                 return
             }
+            // Where it waited at the carrier, kept on the message: carriers often send the same
+            // notice again, and this is how a repeat is recognized after the notice is gone.
+            val location = context.contentResolver.query(noticeUri, arrayOf(Telephony.Mms.CONTENT_LOCATION), null, null, null)
+                ?.use { if (it.moveToFirst()) it.getString(0) else null }
             val persister = PduPersister.getPduPersister(context)
             val uri = persister.persist(message, Telephony.Mms.Inbox.CONTENT_URI, true, true, null, subscription)
             context.contentResolver.delete(noticeUri, null, null)
@@ -93,6 +97,7 @@ object Mms {
                 put(Telephony.Mms.READ, 0)
                 put(Telephony.Mms.SEEN, 0)
                 put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000)
+                if (location != null) put(Telephony.Mms.CONTENT_LOCATION, location)
             }
             context.contentResolver.update(uri, values, null, null)
             Log.i(TAG, "Stored an incoming MMS")
