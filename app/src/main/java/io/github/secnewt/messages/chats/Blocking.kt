@@ -27,13 +27,13 @@ class Blocking(private val context: Context) {
         false
     }
 
-    /** Every blocked number, as it was entered. Empty if Android won't say. */
-    fun all(): List<String> = try {
+    /** Every blocked number, as it was entered; null if Android won't say. */
+    fun all(): List<String>? = try {
         context.contentResolver.query(BlockedNumbers.CONTENT_URI, arrayOf(BlockedNumbers.COLUMN_ORIGINAL_NUMBER), null, null, null)?.use { c ->
             buildList { while (c.moveToNext()) c.getString(0)?.let(::add) }
-        }.orEmpty()
+        }
     } catch (e: Exception) {
-        emptyList()
+        null
     }
 
     fun unblock(number: String): Boolean = try {

@@ -134,6 +134,8 @@ fun ChatScreen(
     val deleteWithUndo: ((Message) -> Unit)? = onDeleteMessage?.let {
         { message ->
             pendingDelete = pendingDelete + message.id
+            // One Undo at a time: a newer delete settles the one before it.
+            snackbar.currentSnackbarData?.dismiss()
             undoScope.launch {
                 val result = snackbar.showSnackbar("Message deleted", actionLabel = "Undo", duration = androidx.compose.material3.SnackbarDuration.Long)
                 if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
@@ -213,7 +215,7 @@ fun ChatScreen(
                 androidx.compose.material3.Snackbar(
                     action = {
                         data.visuals.actionLabel?.let { label ->
-                            androidx.compose.material3.TextButton(onClick = { data.performAction() }, modifier = Modifier.heightIn(min = 48.dp)) {
+                            androidx.compose.material3.TextButton(onClick = { data.performAction() }, modifier = Modifier.heightIn(min = 56.dp)) {
                                 Text(label, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.inversePrimary)
                             }
                         }
@@ -225,15 +227,16 @@ fun ChatScreen(
         topBar = {
             if (finding) {
                 FindBar(
-                    findQuery, onQuery = { findQuery = it; findAt = 0 }, count = found.size, at = findAt,
+                    findQuery, onQuery = { findQuery = it; findAt = 0 }, count = found.size, at = findAt, more = onShowOlder != null,
                     onOlder = { if (found.isNotEmpty()) findAt = (findAt + 1) % found.size },
                     onNewer = { if (found.isNotEmpty()) findAt = (findAt - 1 + found.size) % found.size },
                     onClose = { finding = false; findQuery = "" },
                 )
             } else {
-            // The screen draws under the status bar, so the top bar steps down below it.
-            Row(Modifier.statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { ScreenHeader(chat.title, onBack) }
+            // The screen draws under the status bar, so the top bar steps down below it. At large
+            // text the title gets a line of its own, so it's never squeezed by the buttons.
+            val roomy = androidx.compose.ui.platform.LocalDensity.current.fontScale < 1.3f
+            val extras: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
                 if (chat.isGroup) {
                     Text(
                         "${chat.people.size} people",
@@ -243,13 +246,29 @@ fun ChatScreen(
                         modifier = Modifier.padding(horizontal = 8.dp),
                     )
                 }
-                androidx.compose.material3.IconButton(onClick = { finding = true }, modifier = Modifier.size(56.dp)) {
-                    Icon(Icons.Filled.Search, contentDescription = "Find in this chat")
+                // Worded, not just a magnifying glass.
+                androidx.compose.material3.TextButton(
+                    onClick = { finding = true },
+                    modifier = Modifier.heightIn(min = 56.dp).semantics { contentDescription = "Find in this chat" },
+                ) {
+                    Icon(Icons.Filled.Search, contentDescription = null)
+                    Text("Find", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 4.dp))
                 }
                 if (onDetails != null) {
                     androidx.compose.material3.IconButton(onClick = onDetails, modifier = Modifier.size(56.dp)) {
                         Icon(Icons.Filled.Info, contentDescription = if (chat.isGroup) "Group details" else "Chat details")
                     }
+                }
+            }
+            if (roomy) {
+                Row(Modifier.statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) { ScreenHeader(chat.title, onBack) }
+                    extras()
+                }
+            } else {
+                Column(Modifier.statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    ScreenHeader(chat.title, onBack)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) { extras() }
                 }
             }
             }
@@ -429,6 +448,10 @@ private fun Bubble(
         if (canRetry) androidx.compose.ui.semantics.CustomAccessibilityAction("Try again") { onRetry?.invoke(); true } else null,
     ).ifEmpty { null }
     val who = message.from?.shownName
+    // A sign-in code in it, worked out once per message, not on every redraw.
+    val code = androidx.compose.runtime.remember(message.body, message.mine) {
+        if (message.mine) null else io.github.secnewt.messages.chats.Codes.find(message.body)
+    }
     val color = hue?.outline() ?: MaterialTheme.colorScheme.primary
     val reactions = message.reactions.joinToString(", ") { r -> "${r.emoji} from ${r.from?.shownName ?: "you"}" }
     val spoken = buildString {
@@ -446,7 +469,7 @@ private fun Bubble(
             .then(
             // Anything with its own button keeps its parts for screen readers (a sign-in code's Copy, too).
             if (canRetry || message.waiting || message.images.isNotEmpty() || message.files.isNotEmpty() || Links.find(message.body).isNotEmpty() ||
-                (onCopyCode != null && !message.mine && io.github.secnewt.messages.chats.Codes.find(message.body) != null)
+                (onCopyCode != null && code != null)
             ) {
                 Modifier.semantics(mergeDescendants = false) { if (options != null) customActions = options }
             } else {
@@ -533,7 +556,6 @@ private fun Bubble(
                     )
                 }
                 // A sign-in code someone sent: a button to copy it, right here.
-                val code = if (!message.mine && onCopyCode != null) io.github.secnewt.messages.chats.Codes.find(message.body) else null
                 if (code != null && onCopyCode != null) {
                     androidx.compose.material3.OutlinedButton(
                         onClick = { onCopyCode(code) },
@@ -1075,7 +1097,7 @@ enum class AttachKind(val label: String) {
 
 /** Find in this chat: what to look for, how many matched, and Older / Newer to step through them. */
 @Composable
-private fun FindBar(query: String, onQuery: (String) -> Unit, count: Int, at: Int, onOlder: () -> Unit, onNewer: () -> Unit, onClose: () -> Unit) {
+private fun FindBar(query: String, onQuery: (String) -> Unit, count: Int, at: Int, more: Boolean, onOlder: () -> Unit, onNewer: () -> Unit, onClose: () -> Unit) {
     Column(Modifier.statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val focus = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
@@ -1096,7 +1118,12 @@ private fun FindBar(query: String, onQuery: (String) -> Unit, count: Int, at: In
         if (query.isNotBlank()) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    if (count == 0) "Nothing found" else "${at + 1} of $count",
+                    // Only what's loaded is searched; say so when there's more further back.
+                    when {
+                        count == 0 && more -> "Nothing in these messages. Show older messages to look further back."
+                        count == 0 -> "Nothing found"
+                        else -> "${at + 1} of $count"
+                    },
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
                 )

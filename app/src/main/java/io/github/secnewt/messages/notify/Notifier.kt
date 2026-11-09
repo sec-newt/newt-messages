@@ -108,8 +108,14 @@ class Notifier(private val context: Context) {
             val last = unread.last()
             last.from?.let { from ->
                 val group = if (people.size > 1) store.chats().firstOrNull { it.threadId == threadId }?.name ?: "a group" else null
-                val body = if (settings.settings().readMessage) last.body.ifBlank { if (last.images.isNotEmpty()) "a picture" else "" } else null
-                Speaker.announce(context, Speaking.text(from.name, from.address, group, body))
+                // While locked, say no more than the lock screen shows: who, or nothing at all.
+                val locked = context.getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true
+                val lock = settings.settings().lockScreen
+                val readIt = settings.settings().readMessage && !(locked && lock != io.github.secnewt.messages.settings.LockScreen.SHOW)
+                val body = if (readIt) last.body.ifBlank { if (last.images.isNotEmpty()) "a picture" else "" } else null
+                if (!(locked && lock == io.github.secnewt.messages.settings.LockScreen.HIDE_ALL)) {
+                    Speaker.announce(context, Speaking.text(from.name, from.address, group, body))
+                }
             }
         }
     }

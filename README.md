@@ -52,16 +52,18 @@ Obtainium from this repository's Releases page.
   their tab and are marked read; **Archived (2)** at the bottom of the list shows them. A
   chat comes back by itself when someone writes. Hold one there to unarchive it.
 - **Deleting a message:** hold it, then **Delete this message**. It's gone straight away,
-  with **Undo** at the bottom for a few seconds.
+  with **Undo** at the bottom for a few seconds. Leaving the chat makes it final.
 - **Find in this chat:** the magnifying glass at the top of a chat. Matches are
-  highlighted; **Older** and **Newer** step through them ("2 of 5").
+  highlighted; **Older** and **Newer** step through them ("2 of 5"). It looks through the
+  messages showing; tap **Show older messages** to look further back.
 - **Sign-in codes:** a **Copy 482913** button sits right on the message. The copy is kept
   private and cleared from the clipboard after 2 minutes.
 
 ### Settings
 
 - **On the lock screen:** *Show messages*, *Hide what they say* (just who it's from), or
-  *Hide everything*.
+  *Hide everything*. Saying who's messaging follows it while the phone is locked: with
+  *Hide what they say* it says who but not the words; with *Hide everything* it stays quiet.
 - **Blocked numbers:** everyone you've blocked, with **Unblock**. It's the same list Newt
   Phone uses.
 - **About:** the version you have.

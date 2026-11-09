@@ -46,7 +46,7 @@ fun SettingsScreen(
     onOpenVoiceSettings: () -> Unit = {},
     onTestVoice: () -> Unit = {},
     /** Numbers on Android's block list, shared with Newt Phone. */
-    blocked: List<String> = emptyList(),
+    blocked: List<String>? = emptyList(),
     onUnblock: (String) -> Unit = {},
     /** "0.1.80", for About. */
     version: String = "",
@@ -59,12 +59,12 @@ fun SettingsScreen(
             title = { Text("Unblock $shown?") },
             text = { Text("Their texts and calls come through again, here and in Newt Phone.", style = MaterialTheme.typography.bodyLarge) },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { onUnblock(number); unblocking = null }, modifier = Modifier.heightIn(min = 48.dp)) {
+                androidx.compose.material3.TextButton(onClick = { onUnblock(number); unblocking = null }, modifier = Modifier.heightIn(min = 56.dp)) {
                     Text("Unblock", style = MaterialTheme.typography.titleMedium)
                 }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { unblocking = null }, modifier = Modifier.heightIn(min = 48.dp)) {
+                androidx.compose.material3.TextButton(onClick = { unblocking = null }, modifier = Modifier.heightIn(min = 56.dp)) {
                     Text("Cancel", style = MaterialTheme.typography.titleMedium)
                 }
             },
@@ -126,12 +126,15 @@ fun SettingsScreen(
                 NewtSettingsCard("Blocked numbers", icon = Icons.Filled.Warning) {
                     Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            if (blocked.isEmpty()) "Nobody is blocked. Block someone from a chat's details, or by holding a chat in the list."
-                            else "Texts and calls from these are turned away, here and in Newt Phone.",
+                            when {
+                                blocked == null -> "Android didn't share the block list just now. Try again later."
+                                blocked.isEmpty() -> "Nobody is blocked. Block someone from a chat's details, or by holding a chat in the list."
+                                else -> "Texts and calls from these are turned away, here and in Newt Phone."
+                            },
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        blocked.forEach { number ->
+                        blocked.orEmpty().forEach { number ->
                             val shown = io.github.secnewt.messages.chats.PhoneFormat.pretty(number)
                             androidx.compose.foundation.layout.Row(
                                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,

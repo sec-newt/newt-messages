@@ -70,8 +70,14 @@ class SettingsStore(context: Context) {
      * Archived chats, out of the tabs until someone writes again: a chat stays archived only
      * while its newest message is no newer than when it was archived.
      */
-    fun archived(threadId: Long, lastTimeMillis: Long): Boolean =
-        Archive.isArchived(archivedAt(threadId), lastTimeMillis)
+    fun archived(threadId: Long, lastTimeMillis: Long): Boolean {
+        val at = archivedAt(threadId) ?: return false
+        if (Archive.isArchived(at, lastTimeMillis)) return true
+        // Someone wrote, so it's back for good: forget it was archived, so deleting that new
+        // message later can't quietly put the chat away again.
+        setArchived(threadId, false)
+        return false
+    }
 
     fun setArchived(threadId: Long, on: Boolean, now: Long = System.currentTimeMillis()) {
         val kept = prefs.getStringSet("archived", emptySet()).orEmpty().filterNot { it.substringBefore(':') == threadId.toString() }.toMutableSet()
