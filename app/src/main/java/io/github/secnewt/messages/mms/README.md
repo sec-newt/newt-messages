@@ -17,6 +17,9 @@ Changes from that copy:
 - Incoming messages pick their chat through `GroupRecipients`: everyone in From, To and Cc
   minus my own number (from the SIM it came in on and the default texting SIM). The original assumed a lone To was me, which sent group
   messages from phones that put one member in To and the rest in Cc into a smaller group.
+- `PduComposer` takes the brackets, spaces, dashes and dots off phone numbers before sending
+  (`(469) 555-0175` goes out as `4695550175/TYPE=PLMN`). Sent as typed, the number wasn't marked
+  as a phone number and carriers refused the whole message. Emails are left alone.
 - DRM (forward-locked) conversion removed: it used a hidden Android class, and copy-protected
   MMS parts are a flip-phone-era feature. Such parts are saved as they arrive.
 

@@ -99,6 +99,56 @@ class MmsPduTest {
     }
 
     @Test
+    fun `numbers written with brackets and spaces go out as plain numbers`() {
+        // Contacts store numbers as typed, like "(469) 555-0175". Sent like that, the number isn't
+        // marked as a phone number, and carriers refuse the whole message.
+        val request = request().apply {
+            setTo(arrayOf(EncodedStringValue("(469) 555-0175"), EncodedStringValue("+1 972-555-0111"), EncodedStringValue("214.555.0122")))
+        }
+        val sent = PduComposer(context, request).make()
+        assertNotNull(sent)
+        val wire = String(sent!!, Charsets.ISO_8859_1)
+        assertTrue(wire, wire.contains("4695550175/TYPE=PLMN"))
+        assertTrue(wire, wire.contains("+19725550111/TYPE=PLMN"))
+        assertTrue(wire, wire.contains("2145550122/TYPE=PLMN"))
+        val parsed = PduParser(sent, true).parse() as SendReq
+        assertEquals(listOf("4695550175", "+19725550111", "2145550122"), parsed.to.map { it.string })
+    }
+
+    @Test
+    fun `numbers with invisible or unusual separators go out as plain numbers`() {
+        // Android wraps formatted numbers in direction marks, and some contacts use a no-break
+        // space or a no-break hyphen.
+        val request = request().apply {
+            setTo(arrayOf(EncodedStringValue("\u202A(469) 555-0175\u202C"), EncodedStringValue("214\u00A0555\u20110122")))
+        }
+        val sent = PduComposer(context, request).make()
+        assertNotNull(sent)
+        val parsed = PduParser(sent!!, true).parse() as SendReq
+        assertEquals(listOf("4695550175", "2145550122"), parsed.to.map { it.string })
+    }
+
+    @Test
+    fun `addresses that aren't phone numbers keep their own kind`() {
+        assertEquals(null, PduComposer.plainNumber("10.0.0.1"))
+        assertEquals(null, PduComposer.plainNumber("someone@example.com"))
+        assertEquals(null, PduComposer.plainNumber("Amazon 123"))
+        assertEquals(null, PduComposer.plainNumber("*86"))
+        val request = request().apply { setTo(arrayOf(EncodedStringValue("10.0.0.1"))) }
+        val wire = String(PduComposer(context, request).make()!!, Charsets.ISO_8859_1)
+        assertTrue(wire, wire.contains("10.0.0.1/TYPE=IPV4"))
+    }
+
+    @Test
+    fun `an email address is sent as it is`() {
+        val request = request().apply { setTo(arrayOf(EncodedStringValue("someone@example.com"))) }
+        val sent = PduComposer(context, request).make()
+        assertNotNull(sent)
+        val parsed = PduParser(sent!!, true).parse() as SendReq
+        assertEquals(listOf("someone@example.com"), parsed.to.map { it.string })
+    }
+
+    @Test
     fun `a downloaded message's words and picture are read`() {
         // A retrieved message has the same layout as a sent one, with a different type byte.
         val retrieved = PduComposer(context, request()).make()!!.copyOf()
