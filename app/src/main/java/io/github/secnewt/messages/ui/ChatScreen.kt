@@ -98,6 +98,8 @@ fun ChatScreen(
     onRemoveAttachment: (io.github.secnewt.messages.chats.Attachment) -> Unit = {},
     /** Keep a copy of a picture or file: (address, name, type). */
     onSave: ((String, String, String) -> Unit)? = null,
+    /** Share a picture with another app: (where it is, its name, its type). */
+    onShare: ((String, String, String) -> Unit)? = null,
     /** Who's in the chat, renaming, adding or removing people, deleting. */
     onDetails: (() -> Unit)? = null,
     /** React to a message with an emoji (or take it back). */
@@ -199,6 +201,7 @@ fun ChatScreen(
             uri,
             onClose = { viewing = null },
             onSave = onSave?.let { save -> { save(uri, "picture", "image/jpeg") } },
+            onShare = onShare?.let { share -> { share(uri, "picture", "image/jpeg") } },
             onForward = if (message != null && onForward != null) ({ viewing = null; onForward(message) }) else null,
             onReact = if (message != null && onReact != null && io.github.secnewt.messages.reactions.Reactions.canReact(message)) {
                 { emoji -> onReact(message, emoji) }
