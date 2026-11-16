@@ -446,6 +446,7 @@ class MainActivity : ComponentActivity() {
                 attached = attachments,
                 onRemoveAttachment = { gone -> attachments = attachments - gone },
                 onSave = { uri, name, type -> Thread { save(uri, name, type) }.start() },
+                onShare = { uri, name, type -> Thread { share(uri, name, type) }.start() },
                 onDetails = { showDetails = true },
                 onReact = { message, emoji ->
                     // A reaction is an ordinary text in iPhone wording; it folds onto the message here too.
@@ -580,6 +581,16 @@ class MainActivity : ComponentActivity() {
         showDetails = false
         openThread = thread
         version++
+    }
+
+    /** Opens Android's share sheet for a picture, to send it to another app. */
+    private fun share(uri: String, name: String, type: String) {
+        // A picture's real type (PNG, GIF…) comes from the message store, as for Save.
+        val real = contentResolver.getType(Uri.parse(uri))?.takeIf { it.contains('/') } ?: type
+        val sheet = io.github.secnewt.messages.chats.ShareOut.intent(this, uri, name, real)
+        runOnUiThread {
+            if (sheet != null) startActivity(sheet) else Toast.makeText(this, "Couldn't share it", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun save(uri: String, name: String, type: String) {
