@@ -2,6 +2,14 @@ package io.github.secnewt.messages.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
@@ -11,7 +19,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -37,13 +44,15 @@ import kotlinx.coroutines.withContext
 
 /**
  * A picture full screen. Pinch to zoom, drag to look around; React puts an emoji on it, Forward
- * sends it on, Save keeps a copy; Close or back to leave. [mine] is the emoji I've already put on.
+ * sends it on in Newt, Share hands it to another app, Save keeps a copy; Close or back to leave.
+ * [mine] is the emoji I've already put on.
  */
 @Composable
 fun PictureViewer(
     uri: String,
     onClose: () -> Unit,
     onSave: (() -> Unit)? = null,
+    onShare: (() -> Unit)? = null,
     onForward: (() -> Unit)? = null,
     onReact: ((String) -> Unit)? = null,
     mine: Set<String> = emptySet(),
@@ -79,23 +88,19 @@ fun PictureViewer(
             } else {
                 Text("Loading…", color = Color.White, style = MaterialTheme.typography.titleMedium, modifier = Modifier.align(Alignment.Center))
             }
+            // On a dark strip across the top, so the buttons stand out over any picture. Each
+            // button is as wide as its word, so words never break; with very large text the row
+            // scrolls sideways instead of squeezing them.
             androidx.compose.foundation.layout.Row(
-                Modifier.align(Alignment.TopEnd).safeDrawingPadding().padding(16.dp),
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+                Modifier.align(Alignment.TopCenter).fillMaxWidth().background(Color.Black.copy(alpha = 0.85f))
+                    .safeDrawingPadding().padding(vertical = 4.dp)
+                    .horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceEvenly,
             ) {
-                if (onForward != null) {
-                    Button(onClick = onForward, modifier = Modifier.heightIn(min = 56.dp)) {
-                        Text("Forward", style = MaterialTheme.typography.titleMedium)
-                    }
-                }
-                if (onSave != null) {
-                    Button(onClick = onSave, modifier = Modifier.heightIn(min = 56.dp)) {
-                        Text("Save", style = MaterialTheme.typography.titleMedium)
-                    }
-                }
-                Button(onClick = onClose, modifier = Modifier.heightIn(min = 56.dp)) {
-                    Text("Close", style = MaterialTheme.typography.titleMedium)
-                }
+                if (onForward != null) ViewerButton(NewtIcons.Forward, "Forward", onForward)
+                if (onShare != null) ViewerButton(Icons.Filled.Share, "Share", onShare)
+                if (onSave != null) ViewerButton(NewtIcons.Save, "Save", onSave)
+                ViewerButton(Icons.Filled.Close, "Close", onClose)
             }
             if (onReact != null) {
                 // On a dark strip so the emoji stand out over any picture.
@@ -107,6 +112,28 @@ fun PictureViewer(
                 }
             }
         }
+    }
+}
+
+/**
+ * One of the picture's buttons: a big icon with its word under it, so it's quick to spot and
+ * still says what it does. At least 64dp tall, and as wide as its word (one line, never broken).
+ */
+@Composable
+private fun ViewerButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    androidx.compose.foundation.layout.Column(
+        modifier
+            .heightIn(min = 64.dp)
+            .widthIn(min = 72.dp)
+            .clip(MaterialTheme.shapes.medium)
+            .clickable(onClick = onClick, role = androidx.compose.ui.semantics.Role.Button)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+    ) {
+        // The word below says it; the icon itself isn't read out twice.
+        androidx.compose.material3.Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
+        Text(label, color = Color.White, style = MaterialTheme.typography.titleSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center, softWrap = false)
     }
 }
 

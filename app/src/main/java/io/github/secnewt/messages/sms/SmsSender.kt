@@ -20,7 +20,8 @@ object SmsSender {
     fun send(context: Context, address: String, body: String) {
         if (address.isBlank() || body.isBlank()) return
         val store = MessageStore(context)
-        val uri = store.saveOutgoing(address, body)
+        // The saved copy gets the plain number too, so it matches what goes out.
+        val uri = store.saveOutgoing(plain(address), body)
         if (uri == null) {
             Log.w("NewtSms", "The message store refused an outgoing text")
             return
@@ -34,15 +35,25 @@ object SmsSender {
         transmit(context, Uri.withAppendedPath(Telephony.Sms.CONTENT_URI, id.toString()), address, body)
     }
 
+    /**
+     * A phone number without its brackets, spaces and dashes ("+1 972-555-0111" goes out as
+     * "+19725550111"). Contacts keep numbers as typed, and some phones and carriers refuse a text
+     * to one. Emails, short codes and anything that isn't a phone number are left alone.
+     */
+    internal fun plain(address: String): String =
+        io.github.secnewt.messages.mms.pdu.PduComposer.plainNumber(address) ?: address
+
     private fun transmit(context: Context, uri: Uri, address: String, body: String) {
         val sms = context.getSystemService(SmsManager::class.java)
+        // Here too, so Try again on a text saved before this fix goes out plain as well.
+        val to = plain(address)
         try {
             val parts = sms.divideMessage(body)
             // One "sent" report per part; only the last one moves the message to Sent, and any
             // failed part marks it failed. One delivery report, for the last part.
             val sent = ArrayList(parts.indices.map { i -> report(context, SentReceiver::class.java, uri, i, i == parts.lastIndex) })
             val delivered = ArrayList(parts.indices.map { i -> if (i == parts.lastIndex) report(context, DeliveredReceiver::class.java, uri, i, true) else null })
-            sms.sendMultipartTextMessage(address, null, parts, sent, delivered)
+            sms.sendMultipartTextMessage(to, null, parts, sent, delivered)
             Log.i("NewtSms", "Sending a text in ${parts.size} part(s)")
         } catch (e: Exception) {
             Log.e("NewtSms", "Couldn't send a text", e)
