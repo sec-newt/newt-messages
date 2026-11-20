@@ -8,7 +8,7 @@ tone_instructions: "Be brief and direct. Skip praise. Only comment when somethin
 reviews:
   profile: chill
   request_changes_workflow: false
-  high_level_summary: true
+  high_level_summary: false
   collapse_walkthrough: true
   review_details: false
   changed_files_summary: false
@@ -24,7 +24,7 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
-    ignore_title_keywords: ["WIP", "[skip review]"]
+    ignore_title_keywords: ["[WIP]", "[skip review]"]
     ignore_usernames: ["dependabot[bot]"]
 
   path_filters:
