@@ -85,13 +85,13 @@ receiving moves up into Phase 1, and switching waits for it.
    unread count in Newt Home.
 
 - [x] Create the GitHub repo
-- [ ] Phase 1
+- [x] Phase 1
   - [x] Foundations: tab sorting, 2FA code spotting, reaction parsing and matching, the chat
     list and chat screens (sample data only; not usable as the messaging app yet)
   - [x] Default messaging app: send and receive SMS, notifications with reply and Copy code,
     reactions folded and notified quietly (block list: Android drops blocked senders' texts
     before they reach any app; to confirm on the phone)
-  - [ ] MMS receive and send (needed before switching: group texts are MMS). Built on Android's
+  - [x] MMS receive and send (needed before switching: group texts are MMS). Built on Android's
     own MMS format code (AOSP, Apache 2.0) copied into `mms/`, see its README; not the Fossify
     library, which comes from JitPack and pulls in OkHttp 2.5 (2015, known security bugs).
     Android's MMS service does every network step, including the carrier acknowledgement.
@@ -99,11 +99,21 @@ receiving moves up into Phase 1, and switching waits for it.
     phone with QUIK still installed, starting with a throwaway group.
 - [x] From first use (Oct 19): tappable links, full-size pictures, deleting chats, saving
   pictures and files, renaming groups
-- [ ] Full-fledged (Oct 19 list; done so far: details, new chat, message actions, settings): chat details (members, text/call, add to contacts, add/remove
+- [x] Full-fledged (Oct 19 list): chat details (members, text/call, add to contacts, add/remove
   people, rename, delete); new chat button; message actions (react, copy, delete one); settings
-  (reaction notifications, speak sender, pin, mute); search, Newt Home unread count, spam.
+  (reaction notifications, speak sender, pin, mute); search, Newt Home unread count, spam
+  (the shared block list and Newt Phone's "starting with" rules).
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:511314d0b003636662a1ac05e13cfe9a9b9ed7acdcbedb1758243dbdc6934312 -->
+
 - [ ] Phase 2
-- [ ] Phase 3
+  - [x] Implement pictures, videos, voice messages and group chats over MMS; group names;
+    per-person colors.
+  - [ ] Verify on a GrapheneOS phone that MMS works without the app's internet permission.
+
+<!-- /coderabbit-ai-generated:v1 -->
+- [x] Phase 3: reactions, 2FA copy, speaking the sender, the unread count in Newt Home.
 
 ## Open questions
 
