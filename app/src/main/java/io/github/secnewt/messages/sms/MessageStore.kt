@@ -46,7 +46,7 @@ class MessageStore(private val context: Context) {
                     val people = c.getString(2).orEmpty().split(' ').mapNotNull { it.toLongOrNull()?.let(addresses::get) }.map(::person)
                     if (people.isEmpty()) continue
                     val shown = Previews.fromSummary(c.getString(3).orEmpty()) ?: Previews.of(raw(id, limit = 1).lastOrNull())
-                    add(Chat(id, people, shown, c.getLong(1), unread = unread[id] ?: 0, name = groupNames.name(id), pinned = chatSettings.pinned(id), muted = chatSettings.muted(id), colors = personColors.colors(id, people), draft = drafts.draft(id), failed = (failed[id] ?: 0L) >= c.getLong(1) - 1000))
+                    add(Chat(id, people, shown, c.getLong(1), unread = unread[id] ?: 0, name = groupNames.name(id), pinned = chatSettings.pinned(id), muted = chatSettings.muted(id), colors = personColors.colors(id, people), draft = drafts.draft(id), failed = (failed[id] ?: 0L) >= c.getLong(1) - 1000, archived = chatSettings.archived(id, c.getLong(1))))
                 }
             }
         }.orEmpty()

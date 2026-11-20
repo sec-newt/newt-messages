@@ -9,7 +9,34 @@ data class Person(
     /** Their contact, for View contact / Edit contact. */
     val contact: String? = null,
 ) {
-    val shownName: String get() = name ?: address
+    val shownName: String get() = name ?: PhoneFormat.pretty(address)
+
+    /** What picks their color when nobody chose one: unchanged by how the number is shown. */
+    val colorName: String get() = name ?: address
+}
+
+/** Phone numbers the way people write them. */
+object PhoneFormat {
+    /**
+     * "(214) 555-0155" for a US number, with or without its +1, so it fits on one line and
+     * reads the way it's said. Numbers without +1 only on a US phone. Short codes, named senders and other countries' numbers are
+     * left as they came.
+     */
+    fun pretty(address: String, country: String = java.util.Locale.getDefault().country): String {
+        val trimmed = address.trim()
+        if (trimmed.any { it.isLetter() }) return trimmed
+        if (trimmed.any { !it.isDigit() && it !in "+-(). " }) return trimmed
+        val digits = trimmed.filter { it.isDigit() }
+        // Without a +1, a number is only taken as American on an American phone.
+        val us = country.equals("US", ignoreCase = true) || country.isEmpty()
+        val national = when {
+            digits.length == 11 && trimmed.startsWith("+1") -> digits.substring(1)
+            us && digits.length == 10 && !trimmed.startsWith("+") -> digits
+            us && digits.length == 11 && digits.startsWith("1") && !trimmed.startsWith("+") -> digits.substring(1)
+            else -> return trimmed
+        }
+        return "(${national.substring(0, 3)}) ${national.substring(3, 6)}-${national.substring(6)}"
+    }
 }
 
 /** A file in a picture message that isn't a picture: a PDF, a contact card, audio, video. */
@@ -93,12 +120,14 @@ data class Chat(
     val draft: String? = null,
     /** The newest message here is mine and didn't go (shown as "Not sent" in the list). */
     val failed: Boolean = false,
+    /** Put away: out of the tabs, under Archived, until someone writes again. */
+    val archived: Boolean = false,
 ) {
     val isGroup: Boolean get() = people.size > 1
     val title: String get() = name ?: people.joinToString(", ") { it.shownName }
 
     /** Someone's color in this chat (someone no longer in it gets the color their name picks). */
-    fun hue(person: Person): PersonHue = colors[ChatColors.key(person.address)] ?: PersonHue.fromName(person.shownName)
+    fun hue(person: Person): PersonHue = colors[ChatColors.key(person.address)] ?: PersonHue.fromName(person.colorName)
 }
 
 /** The three tabs. */
@@ -129,9 +158,9 @@ object ChatSorting {
         return digits.length in 3..8 && trimmed.none { it == '+' }
     }
 
-    /** One tab's chats: pinned first, then unread ones, then newest first. */
+    /** One tab's chats (not archived ones): pinned first, then unread ones, then newest first. */
     fun inTab(chats: List<Chat>, tab: ChatTab): List<Chat> =
-        chats.filter { tabFor(it) == tab }.sortedWith(
+        chats.filter { !it.archived && tabFor(it) == tab }.sortedWith(
             compareByDescending<Chat> { it.pinned }.thenByDescending { it.unread > 0 }.thenByDescending { it.lastTimeMillis },
         )
 

@@ -1,5 +1,10 @@
 package io.github.secnewt.messages.ui
 
+import io.github.secnewt.messages.chats.PhoneFormat
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.foundation.clickable
+
 import io.github.secnewt.ui.NewtChoice
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -219,6 +224,7 @@ fun ChatDetailsScreen(
                     onAddToContacts = { onAddToContacts(person) },
                     onOpenContact = { edit -> onOpenContact(person, edit) },
                     onRemove = { removing = person.address },
+                    compact = chat.isGroup,
                 )
             }
             item {
@@ -265,7 +271,8 @@ fun ChatDetailsScreen(
 
 /**
  * One person in the chat, on a card striped in their color with the color's name written out.
- * Text and Call are worded buttons; everything else, including Block and Remove, is behind ⋯.
+ * One-to-one, Text and Call are big worded buttons and the rest is behind ⋮. In a group, each
+ * person is one short row, so the whole group fits on screen: tap it for Text, Call and the rest.
  */
 @Composable
 private fun MemberRow(
@@ -280,74 +287,93 @@ private fun MemberRow(
     onAddToContacts: () -> Unit,
     onRemove: () -> Unit,
     onOpenContact: (Boolean) -> Unit = {},
+    compact: Boolean = false,
 ) {
     val who = person.shownName
     val shape = RoundedCornerShape(16.dp)
     var menu by rememberSaveable { mutableStateOf(false) }
-    Column(
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .border(2.dp, MaterialTheme.colorScheme.outlineVariant, shape)
-            .newtStripe(hue.outline(), tint = false)
-            .padding(start = 18.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Avatar(who, person.photo, size = 48, color = hue.fill)
-            Column(Modifier.weight(1f)) {
-                Text(who, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(
-                    "${hue.label} · ${if (person.name != null) person.address else "not in your contacts"}",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+    val menuItems: @Composable () -> Unit = {
+        @Composable
+        fun item(text: String, icon: ImageVector?, spoken: String? = null, danger: Boolean = false, action: () -> Unit) =
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    )
+                },
+                leadingIcon = {
+                    if (icon != null) {
+                        Icon(icon, contentDescription = null, tint = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                    } else {
+                        Swatch(hue, size = 22)
+                    }
+                },
+                onClick = { menu = false; action() },
+                modifier = Modifier.heightIn(min = 56.dp).then(if (spoken != null) Modifier.semantics { contentDescription = spoken } else Modifier),
+            )
+        if (compact) {
+            item("Text", Icons.AutoMirrored.Filled.Send, "Text $who", action = onText)
+            item("Call", Icons.Filled.Call, "Call $who", action = onCall)
+        }
+        if (person.contact != null) {
+            item("View contact", Icons.Filled.Person, "View $who's contact") { onOpenContact(false) }
+            item("Edit contact", Icons.Filled.Edit, "Edit $who's contact") { onOpenContact(true) }
+        }
+        if (person.name == null) item("Add to contacts", Icons.Filled.Add, "Add $who to contacts", action = onAddToContacts)
+        item("Change color", null, "Change $who's color, now ${hue.label}", action = onColor)
+        if (canRemove) item("Remove from group", Icons.Filled.Close, danger = true, action = onRemove)
+        item(if (blocked) "Unblock $who" else "Block $who", Icons.Filled.Warning, danger = !blocked, action = onBlock)
+    }
+    Box {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(shape)
+                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                .border(2.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+                .then(
+                    if (compact) {
+                        Modifier.clickable(onClickLabel = "Text, call and more", role = androidx.compose.ui.semantics.Role.Button) { menu = true }
+                    } else {
+                        Modifier
+                    },
                 )
-                if (blocked) NewtStateChip("Blocked", NewtTone.Danger, modifier = Modifier.padding(top = 4.dp))
+                .newtStripe(hue.outline(), tint = false)
+                .padding(start = 18.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Avatar(who, person.photo, size = 48, color = hue.fill)
+                Column(Modifier.weight(1f)) {
+                    Text(who, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "${hue.label} · ${if (person.name != null) PhoneFormat.pretty(person.address) else "not in your contacts"}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (blocked) NewtStateChip("Blocked", NewtTone.Danger, modifier = Modifier.padding(top = 4.dp))
+                }
+                if (compact) Icon(Icons.Filled.MoreVert, contentDescription = "More for $who", tint = MaterialTheme.colorScheme.primary)
+            }
+            if (!compact) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.height(IntrinsicSize.Min)) {
+                    NewtButton("Text", onClick = onText, modifier = Modifier.weight(1f).fillMaxHeight().semantics { contentDescription = "Text $who" })
+                    NewtButton("Call", onClick = onCall, modifier = Modifier.weight(1f).fillMaxHeight().semantics { contentDescription = "Call $who" })
+                    OutlinedIconButton(
+                        onClick = { menu = true },
+                        border = BorderStroke(2.5.dp, MaterialTheme.colorScheme.primary),
+                        modifier = Modifier.size(58.dp).semantics { contentDescription = "More for $who" },
+                    ) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = null)
+                    }
+                }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.height(IntrinsicSize.Min)) {
-            NewtButton("Text", onClick = onText, modifier = Modifier.weight(1f).fillMaxHeight().semantics { contentDescription = "Text $who" })
-            NewtButton("Call", onClick = onCall, modifier = Modifier.weight(1f).fillMaxHeight().semantics { contentDescription = "Call $who" })
-            Box {
-                OutlinedIconButton(
-                    onClick = { menu = true },
-                    border = BorderStroke(2.5.dp, MaterialTheme.colorScheme.primary),
-                    modifier = Modifier.size(58.dp).semantics { contentDescription = "More for $who" },
-                ) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = null)
-                }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    @Composable
-                    fun item(text: String, icon: ImageVector?, spoken: String? = null, danger: Boolean = false, action: () -> Unit) =
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                                )
-                            },
-                            leadingIcon = {
-                                if (icon != null) {
-                                    Icon(icon, contentDescription = null, tint = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
-                                } else {
-                                    Swatch(hue, size = 22)
-                                }
-                            },
-                            onClick = { menu = false; action() },
-                            modifier = Modifier.heightIn(min = 56.dp).then(if (spoken != null) Modifier.semantics { contentDescription = spoken } else Modifier),
-                        )
-                    if (person.contact != null) {
-                        item("View contact", Icons.Filled.Person, "View $who's contact") { onOpenContact(false) }
-                        item("Edit contact", Icons.Filled.Edit, "Edit $who's contact") { onOpenContact(true) }
-                    }
-                    if (person.name == null) item("Add to contacts", Icons.Filled.Add, "Add $who to contacts", action = onAddToContacts)
-                    item("Change color", null, "Change $who's color, now ${hue.label}", action = onColor)
-                    if (canRemove) item("Remove from group", Icons.Filled.Close, danger = true, action = onRemove)
-                    item(if (blocked) "Unblock $who" else "Block $who", Icons.Filled.Warning, danger = !blocked, action = onBlock)
-                }
-            }
+        // Anchored under the card, at its right edge.
+        Box(Modifier.align(Alignment.BottomEnd)) {
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) { menuItems() }
         }
     }
 }

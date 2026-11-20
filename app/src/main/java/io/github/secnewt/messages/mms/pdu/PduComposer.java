@@ -456,6 +456,15 @@ public class PduComposer {
         EncodedStringValue temp = null;
 
         try {
+            // Newt Messages: a number as typed in Contacts, like "(469) 555-0175", isn't a valid
+            // MMS phone number, so it went out unmarked and carriers refused the whole message.
+            // Phone numbers go out plain; emails and other addresses are left alone.
+            String plain = plainNumber(address.getString());
+            if (plain != null) {
+                temp = new EncodedStringValue(plain);
+                temp.appendTextString(STRING_PHONE_NUMBER_ADDRESS_TYPE.getBytes());
+                return temp;
+            }
             int addressType = checkAddressType(address.getString());
             temp = EncodedStringValue.copy(address);
             if (PDU_PHONE_NUMBER_ADDRESS_TYPE == addressType) {
@@ -1131,6 +1140,25 @@ public class PduComposer {
 
             return m;
         }
+    }
+
+    private static final java.util.regex.Pattern PLAIN_NUMBER = java.util.regex.Pattern.compile("\\+?[0-9]+");
+    private static final java.util.regex.Pattern IPV4 = java.util.regex.Pattern.compile(REGEXP_IPV4_ADDRESS_TYPE);
+
+    /**
+     * Newt Messages: a phone number with its separators removed ("+1 (972) 555-0111" becomes
+     * "+19725550111"), or null when the address isn't a phone number: an email, an IPv4
+     * address, anything with letters, or a code with * or #. Separators are whatever Android's
+     * PhoneNumberUtils says they are, which covers no-break spaces and direction marks too.
+     */
+    public static String plainNumber(String address) {
+        if (address == null || IPV4.matcher(address).matches()) return null;
+        for (int i = 0; i < address.length(); i++) {
+            char c = address.charAt(i);
+            if (Character.isLetter(c) || c == '@' || c == '*' || c == '#' || c == ',' || c == ';') return null;
+        }
+        String plain = android.telephony.PhoneNumberUtils.stripSeparators(address);
+        return plain != null && PLAIN_NUMBER.matcher(plain).matches() ? plain : null;
     }
 
     /**

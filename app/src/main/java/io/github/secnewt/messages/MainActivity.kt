@@ -69,6 +69,7 @@ class MainActivity : ComponentActivity() {
         picked = null
     }
     private var startDraft by mutableStateOf("")
+    private val sending = java.util.concurrent.Executors.newSingleThreadExecutor()
     // Pictures, videos or words shared from another app, waiting for me to pick a chat.
     private var shared by mutableStateOf<List<io.github.secnewt.messages.chats.Attachment>>(emptyList())
     private var sharedText by mutableStateOf("")
@@ -215,6 +216,14 @@ class MainActivity : ComponentActivity() {
             BackHandler { showSettings = false }
             val store = io.github.secnewt.messages.settings.SettingsStore(this)
             var current by androidx.compose.runtime.remember { mutableStateOf(store.settings()) }
+            // Read off the main thread; null until read, or when Android won't say.
+            var blockedVersion by androidx.compose.runtime.remember { mutableStateOf(0) }
+            val blocked by androidx.compose.runtime.produceState<List<String>?>(null, blockedVersion) {
+                value = withContext(Dispatchers.IO) { io.github.secnewt.messages.chats.Blocking(this@MainActivity).all() }
+            }
+            val version = androidx.compose.runtime.remember {
+                runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull().orEmpty()
+            }
             io.github.secnewt.messages.ui.SettingsScreen(
                 current,
                 onChange = {
@@ -222,6 +231,17 @@ class MainActivity : ComponentActivity() {
                     store.save(it)
                 },
                 onBack = { showSettings = false },
+                blocked = blocked,
+                onUnblock = { number ->
+                    Thread {
+                        val ok = io.github.secnewt.messages.chats.Blocking(this).unblock(number)
+                        runOnUiThread {
+                            if (!ok) Toast.makeText(this, "Android didn't allow that change.", Toast.LENGTH_LONG).show()
+                            blockedVersion++
+                        }
+                    }.start()
+                },
+                version = version,
                 onOpenVoiceSettings = { runCatching { startActivity(Intent("com.android.settings.TTS_SETTINGS")) } },
                 onTestVoice = {
                     io.github.secnewt.messages.settings.Speaker.speak(
@@ -381,81 +401,95 @@ class MainActivity : ComponentActivity() {
             return
         }
         BackHandler { openThread = null }
-        ChatScreen(
-            chat, messages, draft,
-            onDraftChange = {
-                draft = it
-                drafts.keep(thread, it)
-            },
-            onSend = {
-                val text = draft.trim()
-                val attached = attachments
-                if (text.isNotEmpty() || attached.isNotEmpty()) {
-                    draft = ""
-                    drafts.clear(thread)
-                    startDraft = ""
-                    attachments = emptyList()
-                    Thread { send(chat, text, attached) }.start()
-                }
-            },
-            onBack = { openThread = null },
-            time = ::time,
-            onDownload = { message -> Thread { retry(message) }.start() },
-            onShowOlder = if (page.hasOlder) ({ reach += MessageStore.PAGE }) else null,
-            onRetry = { message ->
-                Thread { Outgoing.retry(this, message)?.let(::complain) }.start()
-            },
-            onAttach = { kind ->
-                when (kind) {
-                    io.github.secnewt.messages.ui.AttachKind.MEDIA ->
-                        pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
-                    io.github.secnewt.messages.ui.AttachKind.CAMERA -> {
-                        val target = cameraFile()
-                        cameraTarget = target
-                        runCatching { takePhoto.launch(target) }.onFailure {
-                            Toast.makeText(this, "No camera app could take the photo.", Toast.LENGTH_LONG).show()
-                        }
+        // One ChatScreen per chat: Undo, Find and the like never carry over to another chat.
+        androidx.compose.runtime.key(thread) {
+            ChatScreen(
+                chat, messages, draft,
+                onDraftChange = {
+                    draft = it
+                    drafts.keep(thread, it)
+                },
+                onSend = {
+                    val text = draft.trim()
+                    val attached = attachments
+                    if (text.isNotEmpty() || attached.isNotEmpty()) {
+                        draft = ""
+                        drafts.clear(thread)
+                        startDraft = ""
+                        attachments = emptyList()
+                        // One at a time, in order: a text sent while a video is being made smaller waits for it.
+                        sending.execute { send(chat, text, attached) }
                     }
-                    io.github.secnewt.messages.ui.AttachKind.FILE -> pickFile.launch(arrayOf("*/*"))
-                    io.github.secnewt.messages.ui.AttachKind.CONTACT -> pickContactCard.launch(null)
-                }
-            },
-            attached = attachments.takeIf { it.isNotEmpty() }?.joinToString(", ") { it.name },
-            onRemoveAttachment = { attachments = emptyList() },
-            onSave = { uri, name, type -> Thread { save(uri, name, type) }.start() },
-            onDetails = { showDetails = true },
-            onReact = { message, emoji ->
-                // A reaction is an ordinary text in iPhone wording; it folds onto the message here too.
-                io.github.secnewt.messages.reactions.Reactions.reply(message, emoji)?.let { text ->
-                    Thread { Outgoing.send(this, chat.people.map { it.address }, text)?.let(::complain) }.start()
-                }
-            },
-            onDeleteMessage = { message -> Thread { MessageStore(this).deleteMessage(message.id) }.start() },
-            onForward = { message ->
-                // Forwarding works like sharing from another app: back to the chat list to pick
-                // a chat (or start one), where the words and pictures wait in the message box.
-                shared = message.images.mapIndexed { i, uri ->
-                    io.github.secnewt.messages.chats.Attachment(uri, if (message.images.size > 1) "picture ${i + 1}.jpg" else "picture.jpg", "image/jpeg")
-                } + message.files
-                sharedText = message.body
-                openThread = null
-            },
-            onCallNumber = { number ->
-                runCatching { startActivity(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null))) }.onFailure {
-                    Toast.makeText(this, "No phone app could call it.", Toast.LENGTH_LONG).show()
-                }
-            },
-            onTextNumber = { number -> open(listOf(number)) },
-            loadDetails = { message -> withContext(Dispatchers.IO) { store.details(message) } },
-            onAddNumberToContacts = { number ->
-                runCatching {
-                    startActivity(
-                        Intent(ContactsContract.Intents.Insert.ACTION).setType(ContactsContract.RawContacts.CONTENT_TYPE)
-                            .putExtra(ContactsContract.Intents.Insert.PHONE, number),
+                },
+                onBack = { openThread = null },
+                time = ::time,
+                onDownload = { message -> Thread { retry(message) }.start() },
+                onShowOlder = if (page.hasOlder) ({ reach += MessageStore.PAGE }) else null,
+                onRetry = { message ->
+                    Thread { Outgoing.retry(this, message)?.let(::complain) }.start()
+                },
+                onAttach = { kind ->
+                    when (kind) {
+                        io.github.secnewt.messages.ui.AttachKind.MEDIA ->
+                            pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                        io.github.secnewt.messages.ui.AttachKind.CAMERA -> {
+                            val target = cameraFile()
+                            cameraTarget = target
+                            runCatching { takePhoto.launch(target) }.onFailure {
+                                Toast.makeText(this, "No camera app could take the photo.", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                        io.github.secnewt.messages.ui.AttachKind.FILE -> pickFile.launch(arrayOf("*/*"))
+                        io.github.secnewt.messages.ui.AttachKind.CONTACT -> pickContactCard.launch(null)
+                    }
+                },
+                attached = attachments,
+                onRemoveAttachment = { gone -> attachments = attachments - gone },
+                onSave = { uri, name, type -> Thread { save(uri, name, type) }.start() },
+                onShare = { uri, name, type -> Thread { share(uri, name, type) }.start() },
+                onDetails = { showDetails = true },
+                onReact = { message, emoji ->
+                    // A reaction is an ordinary text in iPhone wording; it folds onto the message here too.
+                    io.github.secnewt.messages.reactions.Reactions.reply(message, emoji)?.let { text ->
+                        Thread { Outgoing.send(this, chat.people.map { it.address }, text)?.let(::complain) }.start()
+                    }
+                },
+                onDeleteMessage = { message -> Thread { MessageStore(this).deleteMessage(message.id) }.start() },
+                onCopyCode = { code ->
+                    // The same as the notification's Copy: marked private, cleared in a couple of minutes.
+                    sendBroadcast(
+                        Intent(this, io.github.secnewt.messages.notify.ActionReceiver::class.java)
+                            .setAction(io.github.secnewt.messages.notify.ActionReceiver.COPY_CODE)
+                            .putExtra(io.github.secnewt.messages.notify.ActionReceiver.EXTRA_CODE, code),
                     )
-                }.onFailure { Toast.makeText(this, "No contacts app could add it.", Toast.LENGTH_LONG).show() }
-            },
-        )
+                    Toast.makeText(this, "Code copied. It's cleared from the clipboard in 2 minutes.", Toast.LENGTH_LONG).show()
+                },
+                onForward = { message ->
+                    // Forwarding works like sharing from another app: back to the chat list to pick
+                    // a chat (or start one), where the words and pictures wait in the message box.
+                    shared = message.images.mapIndexed { i, uri ->
+                        io.github.secnewt.messages.chats.Attachment(uri, if (message.images.size > 1) "picture ${i + 1}.jpg" else "picture.jpg", "image/jpeg")
+                    } + message.files
+                    sharedText = message.body
+                    openThread = null
+                },
+                onCallNumber = { number ->
+                    runCatching { startActivity(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null))) }.onFailure {
+                        Toast.makeText(this, "No phone app could call it.", Toast.LENGTH_LONG).show()
+                    }
+                },
+                onTextNumber = { number -> open(listOf(number)) },
+                loadDetails = { message -> withContext(Dispatchers.IO) { store.details(message) } },
+                onAddNumberToContacts = { number ->
+                    runCatching {
+                        startActivity(
+                            Intent(ContactsContract.Intents.Insert.ACTION).setType(ContactsContract.RawContacts.CONTENT_TYPE)
+                                .putExtra(ContactsContract.Intents.Insert.PHONE, number),
+                        )
+                    }.onFailure { Toast.makeText(this, "No contacts app could add it.", Toast.LENGTH_LONG).show() }
+                },
+            )
+        }
     }
 
     /**
@@ -463,6 +497,8 @@ class MainActivity : ComponentActivity() {
      * the words and attachments go back in that chat's message box.
      */
     private fun send(chat: Chat, text: String, attachments: List<io.github.secnewt.messages.chats.Attachment> = emptyList()) {
+        // Making a video small enough can take a little while; say so rather than seem stuck.
+        if (attachments.any { it.type.startsWith("video/") }) complain("Getting the video ready to send…")
         val problem = Outgoing.send(this, chat.people.map { it.address }, text, attachments) ?: return
         complain(problem)
         runOnUiThread {
@@ -547,6 +583,16 @@ class MainActivity : ComponentActivity() {
         version++
     }
 
+    /** Opens Android's share sheet for a picture, to send it to another app. */
+    private fun share(uri: String, name: String, type: String) {
+        // A picture's real type (PNG, GIF…) comes from the message store, as for Save.
+        val real = contentResolver.getType(Uri.parse(uri))?.takeIf { it.contains('/') } ?: type
+        val sheet = io.github.secnewt.messages.chats.ShareOut.intent(this, uri, name, real)
+        runOnUiThread {
+            if (sheet != null) startActivity(sheet) else Toast.makeText(this, "Couldn't share it", Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun save(uri: String, name: String, type: String) {
         // A picture's real type (PNG, GIF…) comes from the message store.
         val real = contentResolver.getType(Uri.parse(uri))?.takeIf { it.contains('/') } ?: type
@@ -569,6 +615,13 @@ class MainActivity : ComponentActivity() {
                 store.markRead(it.threadId)
                 Notifier(this).cancel(it.threadId)
             }
+            // Archiving puts a chat away read: what's in it has been dealt with.
+            io.github.secnewt.messages.ui.BulkAction.ARCHIVE -> picked.forEach {
+                store.markRead(it.threadId)
+                Notifier(this).cancel(it.threadId)
+                settings.setArchived(it.threadId, true)
+            }
+            io.github.secnewt.messages.ui.BulkAction.UNARCHIVE -> picked.forEach { settings.setArchived(it.threadId, false) }
             io.github.secnewt.messages.ui.BulkAction.BLOCK -> {
                 val blocking = io.github.secnewt.messages.chats.Blocking(this)
                 val failed = picked.flatMap { it.people }.distinctBy { it.address }.count { !blocking.block(it.address) }

@@ -120,7 +120,8 @@ object Mms {
      */
     fun send(context: Context, to: List<String>, text: String, files: List<Part> = emptyList(), subscription: Int = -1) {
         val request = SendReq().apply {
-            setTo(to.map { EncodedStringValue(it) }.toTypedArray())
+            // Plain numbers in the saved copy too, so it matches what the carrier sees.
+            setTo(to.map { EncodedStringValue(PduComposer.plainNumber(it) ?: it) }.toTypedArray())
             setDate(System.currentTimeMillis() / 1000)
             setBody(
                 PduBody().apply {
