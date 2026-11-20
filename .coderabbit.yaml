@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit AI review — trial run. Tuned to be quiet: real bugs, security,
+# privacy, and accessibility, not style nitpicks. Delete this file and
+# uninstall the GitHub App to end the trial.
+language: en-US
+tone_instructions: "Be brief and direct. Skip praise. Only comment when something is wrong or risky."
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  collapse_walkthrough: true
+  review_details: false
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  related_issues: false
+  related_prs: false
+  suggested_labels: false
+  suggested_reviewers: false
+  in_progress_fortune: false
+  poem: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+    ignore_title_keywords: ["WIP", "[skip review]"]
+    ignore_usernames: ["dependabot[bot]"]
+
+  path_filters:
+    - "!**/build/**"
+    - "!gradle/wrapper/**"
+
+  path_instructions:
+    - path: "**/*.kt"
+      instructions: |
+        This is an SMS/MMS app for GrapheneOS. Focus on, in order:
+        1. Privacy: message bodies, phone numbers, and contact names must never
+           reach logs (Log.*, println, crash reports) or leave the device.
+        2. Correctness: lost or duplicated messages, wrong thread/recipient,
+           ContentProvider cursor leaks, work on the main thread, coroutine
+           cancellation bugs.
+        3. Accessibility: the primary user has low vision. Flag Compose UI
+           missing contentDescription/semantics, touch targets under 48dp,
+           hard-coded small text sizes, or meaning carried by color alone.
+        Do not comment on naming, formatting, or minor style.
+    - path: "**/AndroidManifest.xml"
+      instructions: |
+        Flag any new permission, exported component, or intent filter, and
+        check it against config/allowed-permissions.txt.
+    - path: ".github/workflows/**"
+      instructions: |
+        Flag unpinned actions (must be pinned to a full commit SHA), widened
+        token permissions, and pull_request_target usage.
+
+chat:
+  auto_reply: true
