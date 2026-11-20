@@ -103,8 +103,16 @@ receiving moves up into Phase 1, and switching waits for it.
   people, rename, delete); new chat button; message actions (react, copy, delete one); settings
   (reaction notifications, speak sender, pin, mute); search, Newt Home unread count, spam
   (the shared block list and Newt Phone's "starting with" rules).
-- [x] Phase 2: pictures, videos, voice messages and group chats over MMS; group names;
-  per-person colors.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:511314d0b003636662a1ac05e13cfe9a9b9ed7acdcbedb1758243dbdc6934312 -->
+
+- [ ] Phase 2
+  - [x] Implement pictures, videos, voice messages and group chats over MMS; group names;
+    per-person colors.
+  - [ ] Verify on a GrapheneOS phone that MMS works without the app's internet permission.
+
+<!-- /coderabbit-ai-generated:v1 -->
 - [x] Phase 3: reactions, 2FA copy, speaking the sender, the unread count in Newt Home.
 
 ## Open questions
